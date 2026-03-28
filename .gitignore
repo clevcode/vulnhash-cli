@@ -1,6 +1,10 @@
-vulnhash
+# Rust build artifacts
+target/
 dist/
+
+# Frontend
 web/node_modules/
-# internal/server/bundle/ is committed (needed for go:embed)
-# Rebuild with: make bundle
+
+# Environment
 .env
+
