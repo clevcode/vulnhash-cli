@@ -1,0 +1,6 @@
+vulnhash
+dist/
+web/node_modules/
+# internal/server/bundle/ is committed (needed for go:embed)
+# Rebuild with: make bundle
+.env
