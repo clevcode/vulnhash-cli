@@ -47,6 +47,21 @@ impl Client {
         })
     }
 
+    /// Build a client honouring both the config and this invocation's flags.
+    ///
+    /// A flag can turn Tor on for one command but not off: someone who has
+    /// configured Tor has decided their traffic should not leave the machine
+    /// in the clear, and a stray flag should not quietly undo that. Use
+    /// `vulnhash config tor off` to change it deliberately.
+    pub async fn connect(cfg: &Config, tor: bool, ephemeral: bool) -> Result<Self, String> {
+        if tor || cfg.tor {
+            eprintln!("Routing over Tor (bootstrapping may take a moment)...");
+            Self::with_tor(cfg, ephemeral || cfg.tor_ephemeral).await
+        } else {
+            Ok(Self::new(cfg))
+        }
+    }
+
     pub async fn submit_hash(&self, hash: &str, algorithm: &str) -> Result<HashResponse, String> {
         let body = serde_json::json!({"hash": hash, "algorithm": algorithm});
         let resp = self.do_request("POST", "/api/hashes", Some(&body)).await?;

@@ -7,7 +7,21 @@ your proof document to demonstrate you were the first to find it.
 
 ## Install
 
-Download a prebuilt binary from [Releases](https://github.com/vulnhash/cli/releases), or build from source:
+```bash
+curl -fsSL https://vulnhash.com/install.sh | sh
+```
+
+Installs to `~/.local/bin` (no root needed) and adds it to your PATH if it is
+not there already. Set `VULNHASH_INSTALL_DIR` to install elsewhere, or
+`VULNHASH_NO_MODIFY_PATH=1` to leave your shell config alone.
+
+On Windows:
+
+```powershell
+irm https://vulnhash.com/install.ps1 | iex
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/vulnhash/cli.git
@@ -45,6 +59,26 @@ vulnhash verify <hash>
 # Browse findings in a local web UI
 vulnhash server --port 9090
 ```
+
+## Tor
+
+Any command that talks to the server can be routed through Tor:
+
+```bash
+vulnhash submit ./my-finding.md --tor
+```
+
+To make that the default for every command, set it in the config:
+
+```bash
+vulnhash config tor on            # route everything through Tor
+vulnhash config tor-ephemeral on  # keep no Tor state on disk
+vulnhash config                   # show current settings
+```
+
+`--tor` can turn Tor on for a single command, but not off. If you have
+configured Tor, a stray flag will not quietly send your traffic in the clear;
+use `vulnhash config tor off` to change that deliberately.
 
 ## How It Works
 

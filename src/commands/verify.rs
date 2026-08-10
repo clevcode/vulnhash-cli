@@ -8,11 +8,7 @@ pub fn run(hash: &str, tor: bool) -> Result<(), String> {
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("runtime: {e}"))?;
     rt.block_on(async {
-        let client = if tor {
-            Client::with_tor(&cfg, false).await?
-        } else {
-            Client::new(&cfg)
-        };
+        let client = Client::connect(&cfg, tor, false).await?;
 
         let resp = client.verify_hash(hash).await?;
         if resp.exists {

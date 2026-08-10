@@ -35,11 +35,7 @@ pub fn run(file: &str, tor: bool, tor_ephemeral: bool) -> Result<(), String> {
 
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("runtime: {e}"))?;
     rt.block_on(async {
-        let client = if tor {
-            Client::with_tor(&cfg, tor_ephemeral).await?
-        } else {
-            Client::new(&cfg)
-        };
+        let client = Client::connect(&cfg, tor, tor_ephemeral).await?;
 
         match client.submit_hash(&hash, "sha256").await {
             Ok(resp) => {

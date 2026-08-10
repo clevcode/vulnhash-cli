@@ -9,6 +9,12 @@ pub struct Config {
     pub server: String,
     #[serde(default)]
     pub auth_token: String,
+    /// Route every request through Tor without needing --tor each time.
+    #[serde(default)]
+    pub tor: bool,
+    /// Keep no Tor state on disk. Slower to start, leaves no trace of use.
+    #[serde(default)]
+    pub tor_ephemeral: bool,
 }
 
 fn default_server() -> String {
@@ -20,6 +26,8 @@ impl Default for Config {
         Self {
             server: DEFAULT_SERVER.to_string(),
             auth_token: String::new(),
+            tor: false,
+            tor_ephemeral: false,
         }
     }
 }

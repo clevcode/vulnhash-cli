@@ -51,9 +51,10 @@ enum Commands {
         /// Note text (reads from stdin if omitted)
         text: Option<String>,
     },
-    /// Configure server and auth token
+    /// Configure server, auth token and Tor. Run with no arguments to show
+    /// the current settings.
     Config {
-        /// Config key to set (server or token)
+        /// Config key to set: server, token, tor, tor-ephemeral
         key: Option<String>,
         /// Value to set
         value: Option<String>,
