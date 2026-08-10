@@ -1,0 +1,103 @@
+name: release
+
+# Builds the CLI for every supported platform and uploads the binaries as
+# workflow artifacts.
+#
+# Two of the six platforms cannot be produced on a Linux box, which is why this
+# exists: macOS needs the Apple SDK to link against libSystem, and Windows
+# arm64 needs a Windows toolchain (zig's mingw tree has no aarch64
+# `synchronization` import library). The rest could be cross-compiled locally
+# with `make release`, but are built here too so one run yields a complete set.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-amd64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - platform: darwin-amd64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - platform: darwin-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - platform: windows-amd64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            ext: .exe
+          - platform: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            ext: .exe
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      # build.rs shells out to npm/esbuild to bundle the local web UI.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install musl toolchain
+        if: endsWith(matrix.target, '-linux-musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          version=$(cargo metadata --format-version 1 --no-deps \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])")
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/vulnhash${{ matrix.ext }}" \
+             "dist/vulnhash-${version}-${{ matrix.platform }}${{ matrix.ext }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vulnhash-${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  checksums:
+    name: checksums
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Written to a temp file first so the glob cannot pick up the file being
+      # written, and so a partial run cannot leave a half-built list behind.
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum vulnhash-* > ../checksums.txt.tmp
+          mv ../checksums.txt.tmp checksums.txt
+          cat checksums.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: checksums
+          path: dist/checksums.txt
+          if-no-files-found: error
