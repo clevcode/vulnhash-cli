@@ -15,6 +15,16 @@ Installs to `~/.local/bin` (no root needed) and adds it to your PATH if it is
 not there already. Set `VULNHASH_INSTALL_DIR` to install elsewhere, or
 `VULNHASH_NO_MODIFY_PATH=1` to leave your shell config alone.
 
+Releases are signed. If [minisign](https://jedisct1.github.io/minisign/) is
+installed, the installer verifies the signature and refuses to continue if it
+does not check out; without minisign it falls back to the checksum and tells
+you how to verify by hand. Install minisign first if that matters to you, or
+set `VULNHASH_REQUIRE_SIGNATURE=1` to make an unverifiable download fatal.
+
+```
+public key: RWTqtA0mrMWbFQ1XAcSC/r7WT0YZ/hpNrkC+gjrVA/aH9UESmSCRyp+7
+```
+
 On Windows:
 
 ```powershell
