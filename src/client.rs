@@ -65,11 +65,24 @@ impl Client {
     }
 
     pub async fn verify_hash(&self, hash: &str) -> Result<VerifyResponse, String> {
-        let resp = self.do_request("GET", &format!("/api/verify/{hash}"), None).await?;
-        serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
+        // An unrecorded hash is a normal answer to "does this exist?", not a
+        // failure, and the server reports it as 404 with the same body shape.
+        let (status, body) = self
+            .request_raw("GET", &format!("/api/verify/{hash}"), None)
+            .await?;
+        if status != 404 {
+            check_status(status, &body)?;
+        }
+        serde_json::from_str(&body).map_err(|e| format!("parse response: {e}"))
     }
 
     async fn do_request(&self, method: &str, path: &str, body: Option<&serde_json::Value>) -> Result<String, String> {
+        let (status, body) = self.request_raw(method, path, body).await?;
+        check_status(status, &body)?;
+        Ok(body)
+    }
+
+    async fn request_raw(&self, method: &str, path: &str, body: Option<&serde_json::Value>) -> Result<(u16, String), String> {
         let url = format!("{}{}", self.base_url, path);
         let body_bytes = body.map(|b| serde_json::to_vec(b).unwrap());
 
@@ -79,6 +92,7 @@ impl Client {
                 &url,
                 body_bytes.as_deref(),
                 "application/json",
+                Some(&self.auth_token),
             ).await?
         } else {
             vulnhash_crypto::http::http_request(
@@ -90,17 +104,24 @@ impl Client {
             ).await?
         };
 
-        if resp.status >= 400 {
-            #[derive(Deserialize)]
-            struct ErrResp { error: Option<String> }
-            if let Ok(e) = serde_json::from_str::<ErrResp>(&resp.body) {
-                if let Some(msg) = e.error {
-                    return Err(format!("server error ({}): {}", resp.status, msg));
-                }
-            }
-            return Err(format!("server error ({}): {}", resp.status, resp.body));
-        }
-
-        Ok(resp.body)
+        Ok((resp.status, resp.body))
     }
+}
+
+/// Turn an error status into a message, preferring the server's own wording.
+fn check_status(status: u16, body: &str) -> Result<(), String> {
+    if status < 400 {
+        return Ok(());
+    }
+
+    #[derive(Deserialize)]
+    struct ErrResp {
+        error: Option<String>,
+    }
+    if let Ok(e) = serde_json::from_str::<ErrResp>(body) {
+        if let Some(msg) = e.error {
+            return Err(format!("server error ({status}): {msg}"));
+        }
+    }
+    Err(format!("server error ({status}): {body}"))
 }

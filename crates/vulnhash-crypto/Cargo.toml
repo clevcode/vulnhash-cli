@@ -3,4 +3,37 @@ name = "vulnhash-crypto"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["tor"]
+# Tor pulls in the Arti stack, which is a large dependency tree and the main
+# cost when cross-compiling. Building without it yields an HTTP-only client
+# whose --tor flag reports that support was not compiled in.
+tor = ["dep:arti-client", "dep:tor-rtcompat", "dep:tokio-rustls", "dep:webpki-roots", "dep:rusqlite"]
+
 [dependencies]
+# Async + HTTP
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "macros", "time"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "ring", "webpki-tokio", "tls12"] }
+http-body-util = "0.1"
+bytes = "1"
+url = "2"
+# Needed directly, not just through hyper-rustls: rustls panics on first use
+# unless a crypto provider has been installed for the process.
+#
+# default-features = false matters. rustls enables aws-lc-rs by default, and
+# because Cargo unifies features across the graph, leaving it on drags
+# aws-lc-sys into every build — which then fails to cross-compile under zig and
+# leaves rustls unable to pick between two providers at runtime.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+# Tor (optional)
+arti-client = { version = "0.37", default-features = false, features = ["tokio", "rustls"], optional = true }
+tor-rtcompat = { version = "0.37", default-features = false, features = ["tokio", "rustls"], optional = true }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"], optional = true }
+webpki-roots = { version = "1", optional = true }
+
+# Force rusqlite (transitive via arti -> tor-dirmgr) to bundle sqlite3 so the
+# binary does not depend on a system libsqlite3 at link time.
+rusqlite = { version = "0.37", features = ["bundled"], optional = true }
