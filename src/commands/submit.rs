@@ -3,7 +3,7 @@ use std::io::Read;
 
 use crate::{config, client::Client, store};
 
-pub fn run(file: &str, tor: bool, tor_ephemeral: bool) -> Result<(), String> {
+pub fn run(file: &str, tor: Option<bool>, tor_ephemeral: bool) -> Result<(), String> {
     // Read input
     let proof = if file == "-" {
         let mut buf = Vec::new();

@@ -1,7 +1,7 @@
 use sha2::{Sha256, Digest};
 use crate::{config, client::Client, store};
 
-pub fn run(hash: &str, tor: bool) -> Result<(), String> {
+pub fn run(hash: &str, tor: Option<bool>) -> Result<(), String> {
     let proof = store::get_proof(hash)?;
 
     // Verify hash matches

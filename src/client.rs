@@ -47,14 +47,12 @@ impl Client {
         })
     }
 
-    /// Build a client honouring both the config and this invocation's flags.
+    /// Build a client for one command.
     ///
-    /// A flag can turn Tor on for one command but not off: someone who has
-    /// configured Tor has decided their traffic should not leave the machine
-    /// in the clear, and a stray flag should not quietly undo that. Use
-    /// `vulnhash config tor off` to change it deliberately.
-    pub async fn connect(cfg: &Config, tor: bool, ephemeral: bool) -> Result<Self, String> {
-        if tor || cfg.tor {
+    /// `tor` is the per-command override from --tor / --no-tor; None means the
+    /// configured setting applies.
+    pub async fn connect(cfg: &Config, tor: Option<bool>, ephemeral: bool) -> Result<Self, String> {
+        if tor.unwrap_or(cfg.tor) {
             eprintln!("Routing over Tor (bootstrapping may take a moment)...");
             Self::with_tor(cfg, ephemeral || cfg.tor_ephemeral).await
         } else {

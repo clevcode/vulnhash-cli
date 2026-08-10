@@ -76,9 +76,18 @@ vulnhash config tor-ephemeral on  # keep no Tor state on disk
 vulnhash config                   # show current settings
 ```
 
-`--tor` can turn Tor on for a single command, but not off. If you have
-configured Tor, a stray flag will not quietly send your traffic in the clear;
-use `vulnhash config tor off` to change that deliberately.
+`--tor` and `--no-tor` override the configured setting for a single command,
+in either direction:
+
+| config | flag | result |
+| --- | --- | --- |
+| off | *(none)* | direct |
+| off | `--tor` | Tor |
+| on | *(none)* | Tor |
+| on | `--no-tor` | direct |
+
+Passing both is not an error: the last one on the command line wins, so a
+wrapper script can append `--no-tor` without knowing what it overrides.
 
 ## How It Works
 

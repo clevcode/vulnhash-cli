@@ -1,6 +1,6 @@
 use crate::{config, client::Client};
 
-pub fn run(hash: &str, tor: bool) -> Result<(), String> {
+pub fn run(hash: &str, tor: Option<bool>) -> Result<(), String> {
     let cfg = config::load();
     if cfg.auth_token.is_empty() {
         return Err("not configured. Run 'vulnhash config' first.".into());
