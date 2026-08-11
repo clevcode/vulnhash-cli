@@ -67,8 +67,7 @@ clean:
 #                         windows_aarch64_gnullvm crate ships only
 #                         libwindows.0.53.0.a. True of the -gnullvm target as
 #                         well as -gnu, so switching targets does not help.
-#                         Needs a Windows host with the MSVC ARM64 build tools
-#                         (see .github/workflows/release.yml).
+#                         Build it on Windows; see the note below.
 #   darwin-*        possible with a copied SDK, but the Mac builds better
 #                         binaries. See "Cross-building darwin from Linux".
 #
@@ -124,8 +123,25 @@ windows-amd64: bundle
 	cargo build --release --target x86_64-pc-windows-gnu
 	@$(MAKE) stage TARGET=x86_64-pc-windows-gnu PLATFORM=windows-amd64 EXT=.exe
 
-# Expected to run on a Windows arm64 host, where the MSVC toolchain provides
-# the import libraries zig's mingw tree is missing.
+# Runs on any Windows host with the MSVC ARM64 tools; an x64 box cross-builds
+# it fine, it just cannot run the result. Two prerequisites that are easy to
+# miss, both of which fail in ways that name neither:
+#
+#   1. Start from a Developer Command Prompt for the target, so INCLUDE and
+#      LIB point at the arm64 headers and import libraries:
+#        call "...\VC\Auxiliary\Build\vcvarsall.bat" x64_arm64
+#      Without it clang compiles ring's C and fails without finding MSVC.
+#   2. Put the VS LLVM directory on PATH:
+#        set PATH=...\VC\Tools\Llvm\bin;%PATH%
+#      ring needs clang for aarch64-windows; cc-rs reports it as
+#      `failed to find tool "clang"`.
+#
+# Components: Microsoft.VisualStudio.Component.VC.Tools.ARM64 and
+# Microsoft.VisualStudio.Component.VC.Llvm.Clang. Add them with
+# `setup.exe modify --installPath <instance> --add <component> --quiet
+# --norestart` — note that --wait is a bootstrapper flag and makes the
+# installer exit 87, and that the installer is a WPF application, so over SSH
+# it must be launched into an interactive session.
 windows-arm64: bundle
 	cargo build --release --target aarch64-pc-windows-msvc
 	@$(MAKE) stage TARGET=aarch64-pc-windows-msvc PLATFORM=windows-arm64 EXT=.exe
