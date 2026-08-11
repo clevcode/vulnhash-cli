@@ -1,7 +1,13 @@
-use crate::store;
+use crate::{output, store};
 
-pub fn run() -> Result<(), String> {
+pub fn run(json: bool) -> Result<(), String> {
     let entries = store::list()?;
+
+    if json {
+        output::print(&output::entries(&entries));
+        return Ok(());
+    }
+
     if entries.is_empty() {
         println!("No submissions found.");
         return Ok(());

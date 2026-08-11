@@ -1,5 +1,5 @@
 use sha2::{Sha256, Digest};
-use crate::{config, client::Client, store};
+use crate::{config, client::Client, output, store};
 
 /// One submission that is ready to be published.
 struct Ready {
@@ -8,7 +8,7 @@ struct Ready {
     content: String,
 }
 
-pub fn run(reference: &str, recursive: bool, tor: Option<bool>) -> Result<(), String> {
+pub fn run(reference: &str, recursive: bool, tor: Option<bool>, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
 
     // Publishing is irreversible, so every document is read and checked before
@@ -41,7 +41,15 @@ pub fn run(reference: &str, recursive: bool, tor: Option<bool>) -> Result<(), St
     }
 
     if ready.is_empty() {
-        println!("Nothing to publish: everything selected is already published.");
+        if json {
+            output::print(&serde_json::json!({
+                "published": [],
+                "already_published": already,
+                "unavailable_here": [],
+            }));
+        } else {
+            println!("Nothing to publish: everything selected is already published.");
+        }
         return Ok(());
     }
 
@@ -54,14 +62,31 @@ pub fn run(reference: &str, recursive: bool, tor: Option<bool>) -> Result<(), St
     rt.block_on(async {
         let client = Client::connect(&cfg, tor, false).await?;
 
+        let mut unavailable: Vec<String> = Vec::new();
         if recursive {
-            warn_about_remote_only(&client, &hash, &targets).await;
+            unavailable = remote_only(&client, &hash, &targets).await;
+            if !json {
+                warn_about_remote_only(&unavailable);
+            }
         }
 
+        let mut published = Vec::new();
         for item in &ready {
             client.publish_hash(&item.hash, &item.content).await?;
             store::update_entry(&item.hash, |e| e.published = true)?;
-            println!("Published: {} {}", item.local_id, item.hash);
+            published.push(serde_json::json!({"id": item.local_id, "hash": item.hash}));
+            if !json {
+                println!("Published: {} {}", item.local_id, item.hash);
+            }
+        }
+
+        if json {
+            output::print(&serde_json::json!({
+                "published": published,
+                "already_published": already,
+                "unavailable_here": unavailable,
+            }));
+            return Ok(());
         }
 
         if !already.is_empty() {
@@ -76,27 +101,30 @@ pub fn run(reference: &str, recursive: bool, tor: Option<bool>) -> Result<(), St
     })
 }
 
-/// Warn when the server knows of follow-ups this machine does not have.
+/// Follow-ups the server knows of that this machine does not have.
 ///
 /// Those cannot be published from here — their documents live wherever they
 /// were written — and a recursive publish that silently skipped them would
 /// look like it had covered the whole subtree.
-async fn warn_about_remote_only(client: &Client, hash: &str, targets: &[store::Entry]) {
+async fn remote_only(client: &Client, hash: &str, targets: &[store::Entry]) -> Vec<String> {
     let remote = match client.descendants(hash).await {
         Ok(r) => r,
         // The subtree is a courtesy check; a server that cannot answer it must
         // not stop a publish that is otherwise ready to go.
         Err(e) => {
             eprintln!("warning: could not check the server for other follow-ups: {e}");
-            return;
+            return Vec::new();
         }
     };
 
-    let missing: Vec<&str> = remote
+    remote
         .iter()
         .filter(|r| !r.published && !targets.iter().any(|t| t.hash == r.hash))
-        .map(|r| r.hash.as_str())
-        .collect();
+        .map(|r| r.hash.clone())
+        .collect()
+}
+
+fn warn_about_remote_only(missing: &[String]) {
     if missing.is_empty() {
         return;
     }

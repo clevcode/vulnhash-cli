@@ -1,13 +1,14 @@
 use sha2::{Sha256, Digest};
 use std::io::Read;
 
-use crate::{config, client::Client, store};
+use crate::{config, client::Client, output, store};
 
 pub fn run(
     file: &str,
     parent: Option<&str>,
     tor: Option<bool>,
     tor_ephemeral: bool,
+    json: bool,
 ) -> Result<(), String> {
     // Read input
     let proof = if file == "-" {
@@ -38,11 +39,21 @@ pub fn run(
 
     // Save locally
     let entry = store::save(&hash, &proof, parent_hash.as_deref().unwrap_or(""))?;
-    println!("Saved locally: ~/.vulnhash/{hash}/PROOF.md");
+    if !json {
+        println!("Saved locally: ~/.vulnhash/{hash}/PROOF.md");
+    }
 
     // Submit to server
     let cfg = config::load();
     if cfg.auth_token.is_empty() {
+        if json {
+            let parent_id = store::get_entry(&entry.parent).ok().map(|p| p.local_id);
+            let mut value = output::entry(&entry, parent_id);
+            value["saved"] = serde_json::json!(true);
+            value["server_error"] = serde_json::json!("no auth token configured");
+            output::print(&value);
+            return Ok(());
+        }
         println!("ID:   {}", entry.local_id);
         println!("Hash: {hash}");
         println!("Not submitted to server (no auth token configured).");
@@ -54,7 +65,23 @@ pub fn run(
     rt.block_on(async {
         let client = Client::connect(&cfg, tor, tor_ephemeral).await?;
 
-        match client.submit_hash(&hash, "sha256", parent_hash.as_deref()).await {
+        let outcome = client.submit_hash(&hash, "sha256", parent_hash.as_deref()).await;
+
+        if json {
+            store::update_entry(&hash, |e| e.synced = outcome.is_ok())?;
+            let saved = store::get_entry(&hash)?;
+            let parent_id = store::get_entry(&saved.parent).ok().map(|p| p.local_id);
+            let mut value = output::entry(&saved, parent_id);
+            value["saved"] = serde_json::json!(true);
+            value["server_error"] = match &outcome {
+                Ok(_) => serde_json::Value::Null,
+                Err(e) => serde_json::json!(e),
+            };
+            output::print(&value);
+            return Ok(());
+        }
+
+        match outcome {
             Ok(resp) => {
                 store::update_entry(&hash, |e| e.synced = true)?;
                 println!("ID:   {}", entry.local_id);

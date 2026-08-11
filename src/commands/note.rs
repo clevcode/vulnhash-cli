@@ -1,7 +1,7 @@
 use std::io::Read;
-use crate::store;
+use crate::{output, store};
 
-pub fn run(reference: &str, text: Option<&str>) -> Result<(), String> {
+pub fn run(reference: &str, text: Option<&str>, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
     let content = match text {
         Some(t) => t.to_string(),
@@ -17,6 +17,16 @@ pub fn run(reference: &str, text: Option<&str>) -> Result<(), String> {
     }
 
     store::add_note(&hash, &content)?;
-    println!("Note added.");
+    if json {
+        let entry = store::get_entry(&hash)?;
+        output::print(&serde_json::json!({
+            "status": "ok",
+            "id": entry.local_id,
+            "hash": hash,
+            "notes": store::list_notes(&hash)?,
+        }));
+    } else {
+        println!("Note added.");
+    }
     Ok(())
 }

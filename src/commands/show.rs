@@ -1,8 +1,29 @@
-use crate::store;
+use crate::{output, store};
 
-pub fn run(reference: &str) -> Result<(), String> {
+pub fn run(reference: &str, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
     let entry = store::get_entry(&hash)?;
+
+    if json {
+        let parent_id = store::get_entry(&entry.parent).ok().map(|p| p.local_id);
+        let mut value = output::entry(&entry, parent_id);
+        value["notes"] = serde_json::json!(store::list_notes(&hash)?);
+        value["follow_ups"] = serde_json::Value::Array(
+            store::descendants(&hash)?
+                .iter()
+                .map(|c| {
+                    serde_json::json!({
+                        "id": c.local_id,
+                        "hash": c.hash,
+                        "published": c.published,
+                    })
+                })
+                .collect(),
+        );
+        output::print(&value);
+        return Ok(());
+    }
+
     println!("ID:          {}", entry.local_id);
     println!("Hash:        {}", entry.hash);
     println!("Algorithm:   {}", entry.algorithm);

@@ -1,6 +1,6 @@
-use crate::{config, client::Client, store};
+use crate::{config, client::Client, output, store};
 
-pub fn run(reference: &str, tor: Option<bool>) -> Result<(), String> {
+pub fn run(reference: &str, tor: Option<bool>, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
 
     // No account needed. Checking whether a hash was recorded, and when, is
@@ -14,6 +14,18 @@ pub fn run(reference: &str, tor: Option<bool>) -> Result<(), String> {
         let client = Client::connect(&cfg, tor, false).await?;
 
         let resp = client.verify_hash(&hash).await?;
+
+        if json {
+            output::print(&serde_json::json!({
+                "hash": resp.hash,
+                "exists": resp.exists,
+                "published": resp.published,
+                "submitted_at": resp.submitted_at,
+                "username": resp.username,
+            }));
+            return Ok(());
+        }
+
         if resp.exists {
             println!("Hash:        {}", resp.hash);
             println!("Status:      FOUND");

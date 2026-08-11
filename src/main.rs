@@ -2,6 +2,7 @@ mod config;
 mod store;
 mod client;
 mod commands;
+mod output;
 
 use clap::{Args, Parser, Subcommand};
 
@@ -10,6 +11,11 @@ use clap::{Args, Parser, Subcommand};
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+
+    /// Emit JSON instead of text, for scripts. Accepted before or after the
+    /// subcommand.
+    #[arg(short = 'j', long, global = true)]
+    json: bool,
 }
 
 /// Per-command override of the configured Tor setting.
@@ -107,27 +113,42 @@ fn main() {
     restore_sigpipe();
     let cli = Cli::parse();
 
+    let json = cli.json;
     let result = match cli.command {
         Commands::Submit { file, parent, tor, tor_ephemeral } => {
-            commands::submit::run(&file, parent.as_deref(), tor.choice(), tor_ephemeral)
+            commands::submit::run(&file, parent.as_deref(), tor.choice(), tor_ephemeral, json)
         }
-        Commands::List => commands::list::run(),
-        Commands::Show { reference } => commands::show::run(&reference),
+        Commands::List => commands::list::run(json),
+        Commands::Show { reference } => commands::show::run(&reference, json),
         Commands::Publish { reference, recursive, tor } => {
-            commands::publish::run(&reference, recursive, tor.choice())
+            commands::publish::run(&reference, recursive, tor.choice(), json)
         }
-        Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice()),
-        Commands::Note { reference, text } => commands::note::run(&reference, text.as_deref()),
-        Commands::Config { key, value } => commands::config::run(key.as_deref(), value.as_deref()),
+        Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice(), json),
+        Commands::Note { reference, text } => {
+            commands::note::run(&reference, text.as_deref(), json)
+        }
+        Commands::Config { key, value } => {
+            commands::config::run(key.as_deref(), value.as_deref(), json)
+        }
         Commands::Server { port } => commands::server::run(port),
         Commands::Version => {
-            println!("vulnhash {}", env!("CARGO_PKG_VERSION"));
+            if json {
+                output::print(&serde_json::json!({ "version": env!("CARGO_PKG_VERSION") }));
+            } else {
+                println!("vulnhash {}", env!("CARGO_PKG_VERSION"));
+            }
             Ok(())
         }
     };
 
     if let Err(e) = result {
-        eprintln!("error: {e}");
+        // A caller parsing our output should not have to switch formats the
+        // moment something fails.
+        if json {
+            output::print_error(&e);
+        } else {
+            eprintln!("error: {e}");
+        }
         std::process::exit(1);
     }
 }
@@ -217,6 +238,35 @@ mod tests {
         match Cli::parse_from(["vulnhash", "submit", "f.md"]).command {
             Commands::Submit { parent, .. } => assert_eq!(parent, None),
             _ => panic!("expected a submit command"),
+        }
+    }
+
+    // Global, so a script can put it wherever it reads best rather than
+    // remembering which side of the subcommand it belongs on.
+    #[test]
+    fn json_is_accepted_on_either_side_of_the_subcommand() {
+        for args in [
+            vec!["vulnhash", "list", "--json"],
+            vec!["vulnhash", "--json", "list"],
+            vec!["vulnhash", "list", "-j"],
+            vec!["vulnhash", "-j", "list"],
+        ] {
+            assert!(Cli::parse_from(&args).json, "{args:?}");
+        }
+        assert!(!Cli::parse_from(["vulnhash", "list"]).json);
+    }
+
+    #[test]
+    fn json_reaches_every_command_that_reports_something() {
+        for args in [
+            vec!["vulnhash", "show", "1", "-j"],
+            vec!["vulnhash", "verify", "1", "-j"],
+            vec!["vulnhash", "publish", "1", "-j"],
+            vec!["vulnhash", "submit", "f.md", "-j"],
+            vec!["vulnhash", "note", "1", "text", "-j"],
+            vec!["vulnhash", "config", "-j"],
+        ] {
+            assert!(Cli::parse_from(&args).json, "{args:?}");
         }
     }
 

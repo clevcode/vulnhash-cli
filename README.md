@@ -130,6 +130,34 @@ A recursive publish covers the follow-ups stored on this machine. If the
 server knows of others — submitted from a different machine, whose documents
 are not here — it says so rather than quietly leaving them out.
 
+## JSON Output
+
+Every command that reports something takes `-j` / `--json`, on either side of
+the subcommand:
+
+```bash
+vulnhash list --json
+vulnhash -j submit ./finding.md
+```
+
+Keys are always present, even when empty, so a consumer can index without
+checking first. Timestamps are RFC 3339 in UTC. Failures come back in the same
+format on stderr, with a non-zero exit status:
+
+```json
+{"error":"no submission with local id 99"}
+```
+
+Capturing the hash of something you just submitted:
+
+```bash
+hash=$(my-fuzzer --crash-report | vulnhash submit - --json | jq -r .hash)
+```
+
+The id is local to your machine; the hash is what travels. `vulnhash config
+--json` reports whether a token is set but never prints it, so the output is
+safe to log.
+
 ## Tor
 
 Any command that talks to the server can be routed through Tor:

@@ -1,4 +1,4 @@
-use crate::config;
+use crate::{config, output};
 
 /// Parse the spellings people actually type for a boolean setting.
 fn parse_bool(value: &str) -> Result<bool, String> {
@@ -9,24 +9,34 @@ fn parse_bool(value: &str) -> Result<bool, String> {
     }
 }
 
-pub fn run(key: Option<&str>, value: Option<&str>) -> Result<(), String> {
+pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), String> {
     let mut cfg = config::load();
 
     match (key, value) {
         (Some("server"), Some(v)) => {
             cfg.server = v.to_string();
             cfg.save()?;
-            println!("Server set to: {v}");
+            if json {
+                output::print(&serde_json::json!({"status": "ok", "key": "server"}));
+            } else {
+                println!("Server set to: {v}");
+            }
         }
         (Some("token"), Some(v)) => {
             cfg.auth_token = v.to_string();
             cfg.save()?;
-            println!("Auth token saved.");
+            if json {
+                output::print(&serde_json::json!({"status": "ok", "key": "token"}));
+            } else {
+                println!("Auth token saved.");
+            }
         }
         (Some("tor"), Some(v)) => {
             cfg.tor = parse_bool(v)?;
             cfg.save()?;
-            if cfg.tor {
+            if json {
+                output::print(&serde_json::json!({"status": "ok", "key": "tor", "value": cfg.tor}));
+            } else if cfg.tor {
                 println!("Tor enabled: requests will be routed through Tor.");
             } else {
                 println!("Tor disabled: requests go direct.");
@@ -35,7 +45,11 @@ pub fn run(key: Option<&str>, value: Option<&str>) -> Result<(), String> {
         (Some("tor-ephemeral"), Some(v)) => {
             cfg.tor_ephemeral = parse_bool(v)?;
             cfg.save()?;
-            if cfg.tor_ephemeral {
+            if json {
+                output::print(
+                    &serde_json::json!({"status": "ok", "key": "tor-ephemeral", "value": cfg.tor_ephemeral}),
+                );
+            } else if cfg.tor_ephemeral {
                 println!("Ephemeral Tor enabled: no Tor state is kept on disk.");
             } else {
                 println!("Ephemeral Tor disabled: Tor state is cached between runs.");
@@ -48,6 +62,18 @@ pub fn run(key: Option<&str>, value: Option<&str>) -> Result<(), String> {
             return Err(format!(
                 "unknown config key: {k} (valid: server, token, tor, tor-ephemeral)"
             ));
+        }
+        (None, _) if json => {
+            // The token itself is never emitted: a script that needs it can
+            // read the config file, and printing it invites it into logs.
+            output::print(&serde_json::json!({
+                "server": cfg.server,
+                "auth_token_set": !cfg.auth_token.is_empty(),
+                "tor": cfg.tor,
+                "tor_ephemeral": cfg.tor_ephemeral,
+                "config_path": config::path().display().to_string(),
+                "data_dir": config::dir().display().to_string(),
+            }));
         }
         (None, _) => {
             println!("Server:        {}", cfg.server);
