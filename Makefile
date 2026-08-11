@@ -50,8 +50,14 @@ clean:
 #   windows-arm64   no  - zig's mingw tree ships no aarch64 import library for
 #                         `synchronization`, so the link fails. Build it on a
 #                         Windows arm64 host (see .github/workflows/release.yml).
-#   darwin-*        no  - linking against libSystem needs the Apple SDK.
-#                         Build on macOS (the same workflow does).
+#   darwin-*        no  - not for want of a compiler: `cargo zigbuild --target
+#                         aarch64-apple-darwin` compiles the whole tree, C
+#                         dependencies included, and zig ships libSystem.tbd.
+#                         The link then fails on `framework 'IOKit'` and
+#                         `framework 'CoreFoundation'`, wanted by sysinfo (via
+#                         tor-memquota) and iana-time-zone (via chrono). Zig
+#                         ships no framework stubs; those come from the macOS
+#                         SDK. Build on macOS, where the SDK already is.
 #
 # The darwin and windows-arm64 rules below still work when run on a host that
 # does have the right toolchain, which is what CI uses.
