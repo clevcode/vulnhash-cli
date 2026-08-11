@@ -1,7 +1,8 @@
 use std::io::Read;
 use crate::store;
 
-pub fn run(hash: &str, text: Option<&str>) -> Result<(), String> {
+pub fn run(reference: &str, text: Option<&str>) -> Result<(), String> {
+    let hash = store::resolve(reference)?;
     let content = match text {
         Some(t) => t.to_string(),
         None => {
@@ -15,7 +16,7 @@ pub fn run(hash: &str, text: Option<&str>) -> Result<(), String> {
         return Err("note content is empty".into());
     }
 
-    store::add_note(hash, &content)?;
+    store::add_note(&hash, &content)?;
     println!("Note added.");
     Ok(())
 }

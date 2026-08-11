@@ -1,6 +1,7 @@
-use crate::{config, client::Client};
+use crate::{config, client::Client, store};
 
-pub fn run(hash: &str, tor: Option<bool>) -> Result<(), String> {
+pub fn run(reference: &str, tor: Option<bool>) -> Result<(), String> {
+    let hash = store::resolve(reference)?;
     let cfg = config::load();
     if cfg.auth_token.is_empty() {
         return Err("not configured. Run 'vulnhash config' first.".into());
@@ -10,7 +11,7 @@ pub fn run(hash: &str, tor: Option<bool>) -> Result<(), String> {
     rt.block_on(async {
         let client = Client::connect(&cfg, tor, false).await?;
 
-        let resp = client.verify_hash(hash).await?;
+        let resp = client.verify_hash(&hash).await?;
         if resp.exists {
             println!("Hash:        {}", resp.hash);
             println!("Status:      FOUND");

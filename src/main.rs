@@ -44,35 +44,45 @@ enum Commands {
     Submit {
         /// File path, or "-" for stdin
         file: String,
+        /// Record this as a follow-up to an earlier submission, named by
+        /// local id, hash prefix or full hash
+        #[arg(long, short = 'p', value_name = "REF")]
+        parent: Option<String>,
         #[command(flatten)]
         tor: TorArgs,
         /// Use ephemeral Tor (no state persisted)
         #[arg(long)]
         tor_ephemeral: bool,
     },
-    /// List submitted hashes
+    /// List submitted hashes with their local ids
     #[command(alias = "ls")]
     List,
     /// Show details of a submission
     Show {
-        /// Hash prefix or full hash
-        hash: String,
+        /// Local id, hash prefix or full hash
+        reference: String,
     },
     /// Publish a finding (reveal the proof)
     Publish {
-        hash: String,
+        /// Local id, hash prefix or full hash
+        reference: String,
+        /// Also publish every follow-up submission below this one
+        #[arg(long, short = 'R')]
+        recursive: bool,
         #[command(flatten)]
         tor: TorArgs,
     },
     /// Verify a hash exists on the server
     Verify {
-        hash: String,
+        /// Local id, hash prefix or full hash
+        reference: String,
         #[command(flatten)]
         tor: TorArgs,
     },
     /// Add a note to a finding
     Note {
-        hash: String,
+        /// Local id, hash prefix or full hash
+        reference: String,
         /// Note text (reads from stdin if omitted)
         text: Option<String>,
     },
@@ -97,14 +107,16 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Submit { file, tor, tor_ephemeral } => {
-            commands::submit::run(&file, tor.choice(), tor_ephemeral)
+        Commands::Submit { file, parent, tor, tor_ephemeral } => {
+            commands::submit::run(&file, parent.as_deref(), tor.choice(), tor_ephemeral)
         }
         Commands::List => commands::list::run(),
-        Commands::Show { hash } => commands::show::run(&hash),
-        Commands::Publish { hash, tor } => commands::publish::run(&hash, tor.choice()),
-        Commands::Verify { hash, tor } => commands::verify::run(&hash, tor.choice()),
-        Commands::Note { hash, text } => commands::note::run(&hash, text.as_deref()),
+        Commands::Show { reference } => commands::show::run(&reference),
+        Commands::Publish { reference, recursive, tor } => {
+            commands::publish::run(&reference, recursive, tor.choice())
+        }
+        Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice()),
+        Commands::Note { reference, text } => commands::note::run(&reference, text.as_deref()),
         Commands::Config { key, value } => commands::config::run(key.as_deref(), value.as_deref()),
         Commands::Server { port } => commands::server::run(port),
         Commands::Version => {
@@ -153,6 +165,40 @@ mod tests {
             tor_choice(&["vulnhash", "verify", "abc", "--no-tor", "--tor"]),
             Some(true)
         );
+    }
+
+    // Publishing a subtree has to be asked for explicitly, since it discloses
+    // more than the submission the user named.
+    #[test]
+    fn recursive_publish_is_opt_in() {
+        for (args, want) in [
+            (vec!["vulnhash", "publish", "3"], false),
+            (vec!["vulnhash", "publish", "3", "-R"], true),
+            (vec!["vulnhash", "publish", "3", "--recursive"], true),
+        ] {
+            match Cli::parse_from(&args).command {
+                Commands::Publish { recursive, .. } => assert_eq!(recursive, want, "{args:?}"),
+                _ => panic!("expected a publish command"),
+            }
+        }
+    }
+
+    #[test]
+    fn submit_takes_a_parent_either_way() {
+        for args in [
+            vec!["vulnhash", "submit", "f.md", "--parent", "3"],
+            vec!["vulnhash", "submit", "f.md", "-p", "3"],
+        ] {
+            match Cli::parse_from(&args).command {
+                Commands::Submit { parent, .. } => assert_eq!(parent.as_deref(), Some("3")),
+                _ => panic!("expected a submit command"),
+            }
+        }
+
+        match Cli::parse_from(["vulnhash", "submit", "f.md"]).command {
+            Commands::Submit { parent, .. } => assert_eq!(parent, None),
+            _ => panic!("expected a submit command"),
+        }
     }
 
     #[test]

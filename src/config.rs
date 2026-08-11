@@ -32,10 +32,43 @@ impl Default for Config {
     }
 }
 
+/// Root of the local store.
+///
+/// VULNHASH_HOME overrides the default, which is what keeps two stores apart
+/// on a shared machine and what gives the tests a directory of their own.
 pub fn dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".vulnhash")
+    if let Some(root) = root_override() {
+        return root;
+    }
+    match std::env::var_os("VULNHASH_HOME") {
+        Some(p) if !p.is_empty() => PathBuf::from(p),
+        _ => dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(".vulnhash"),
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_ROOT: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Point this thread's store at `path`. Per-thread rather than per-process so
+/// that tests running side by side cannot tread on each other.
+#[cfg(test)]
+pub fn set_dir_for_test(path: PathBuf) {
+    TEST_ROOT.with(|r| *r.borrow_mut() = Some(path));
+}
+
+#[cfg(test)]
+fn root_override() -> Option<PathBuf> {
+    TEST_ROOT.with(|r| r.borrow().clone())
+}
+
+#[cfg(not(test))]
+fn root_override() -> Option<PathBuf> {
+    None
 }
 
 pub fn path() -> PathBuf {

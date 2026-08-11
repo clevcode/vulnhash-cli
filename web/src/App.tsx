@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 interface Entry {
   hash: string;
+  local_id: number;
+  parent?: string;
   algorithm: string;
   submitted_at: string;
   title: string;
@@ -103,7 +105,9 @@ function EntryList({ onSelect }: { onSelect: (hash: string) => void }) {
               style={styles.card}
               onClick={() => onSelect(e.hash)}
             >
+              <span style={styles.localId}>{e.local_id}</span>
               <code style={styles.hashCode}>{e.hash.substring(0, 24)}...</code>
+              {e.parent && <span style={styles.followUp}>follow-up</span>}
               <span
                 style={{
                   ...styles.badge,
@@ -191,6 +195,9 @@ function EntryDetail({
 
       <div style={styles.detailCard}>
         <p>
+          <strong>ID:</strong> {entry.local_id}
+        </p>
+        <p>
           <strong>Hash:</strong>{" "}
           <code style={styles.hashFull}>{entry.hash}</code>
         </p>
@@ -207,6 +214,12 @@ function EntryDetail({
         <p>
           <strong>Synced:</strong> {entry.synced ? "Yes" : "No"}
         </p>
+        {entry.parent && (
+          <p>
+            <strong>Follows up on:</strong>{" "}
+            <code style={styles.hashFull}>{entry.parent}</code>
+          </p>
+        )}
       </div>
 
       <h3 style={styles.subheading}>Proof Document</h3>
@@ -352,6 +365,20 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
   },
   hashCode: { fontFamily: "monospace", color: "#00d4aa", fontSize: "0.85rem" },
+  localId: {
+    fontFamily: "monospace",
+    color: "#8888a0",
+    fontSize: "0.85rem",
+    minWidth: "1.75rem",
+    textAlign: "right" as const,
+  },
+  followUp: {
+    fontSize: "0.7rem",
+    color: "#8888a0",
+    border: "1px solid rgba(136,136,160,0.35)",
+    borderRadius: "999px",
+    padding: "0.1rem 0.45rem",
+  },
   badge: {
     fontSize: "0.75rem",
     padding: "0.15rem 0.5rem",

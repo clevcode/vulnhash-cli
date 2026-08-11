@@ -11,6 +11,8 @@ pub struct HashResponse {
     pub published: bool,
     pub submitted_at: String,
     pub published_at: Option<String>,
+    #[serde(default)]
+    pub parent_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,9 +62,28 @@ impl Client {
         }
     }
 
-    pub async fn submit_hash(&self, hash: &str, algorithm: &str) -> Result<HashResponse, String> {
-        let body = serde_json::json!({"hash": hash, "algorithm": algorithm});
+    /// Submit a hash, optionally as a follow-up to an earlier submission of
+    /// the caller's, named by its hash.
+    pub async fn submit_hash(
+        &self,
+        hash: &str,
+        algorithm: &str,
+        parent: Option<&str>,
+    ) -> Result<HashResponse, String> {
+        let mut body = serde_json::json!({"hash": hash, "algorithm": algorithm});
+        if let Some(parent) = parent {
+            body["parent"] = serde_json::Value::String(parent.to_string());
+        }
         let resp = self.do_request("POST", "/api/hashes", Some(&body)).await?;
+        serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
+    }
+
+    /// Everything the server knows to descend from this submission. Answered
+    /// in full for the owner, and published-only for anyone else.
+    pub async fn descendants(&self, hash: &str) -> Result<Vec<HashResponse>, String> {
+        let resp = self
+            .do_request("GET", &format!("/api/hashes/{hash}/descendants"), None)
+            .await?;
         serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
     }
 

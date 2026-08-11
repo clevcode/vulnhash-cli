@@ -51,17 +51,24 @@ vulnhash submit ./my-finding.md
 # Pipe directly from your fuzzer
 my-fuzzer --crash-report | vulnhash submit -
 
-# List your submissions
+# List your submissions, with the local id of each
 vulnhash list
 
-# View details
-vulnhash show <hash>
+# Anywhere a hash is accepted, so is the local id or a hash prefix
+vulnhash show 3
+vulnhash show 1f4c9a
+
+# Record a follow-up finding as a child of an earlier one
+vulnhash submit ./deeper-finding.md --parent 3
 
 # Add notes
-vulnhash note <hash> "Additional context about this finding"
+vulnhash note 3 "Additional context about this finding"
 
 # Publish when ready to disclose
-vulnhash publish <hash>
+vulnhash publish 3
+
+# Publish a finding together with every follow-up below it
+vulnhash publish 3 -R
 
 # Verify a hash exists
 vulnhash verify <hash>
@@ -69,6 +76,50 @@ vulnhash verify <hash>
 # Browse findings in a local web UI
 vulnhash server --port 9090
 ```
+
+## Local Ids
+
+`vulnhash list` shows a short id next to each hash, and every command that
+takes a hash takes an id instead:
+
+```
+  ID  HASH                                    PARENT  STATUS     SYNCED  DATE
+   4  52642224757f9dea...                          2  private    yes     2026-08-11 18:51
+   3  f001e2b36d4554ce...                          1  published  yes     2026-08-11 18:51
+```
+
+Ids are local to your machine and never reused: deleting a submission does not
+free its number for the next one, so an id in your notes always means the same
+finding. The hash remains the identifier everyone else uses.
+
+A reference is read as an id when it is all digits, as a hash when it is 64 hex
+characters, and as a hash prefix otherwise.
+
+## Follow-up Findings
+
+A finding often leads to another. `--parent` records that link:
+
+```bash
+vulnhash submit ./root-cause.md              # id 1
+vulnhash submit ./second-bug.md --parent 1   # id 2, a follow-up to 1
+vulnhash submit ./deeper.md --parent 2       # id 3, a follow-up to 2
+```
+
+Publishing stays deliberate. `vulnhash publish 1` discloses that one
+submission and nothing else; `-R` discloses it together with everything below
+it:
+
+```bash
+vulnhash publish 1 -R
+```
+
+The tree does not have to be published as a unit, and it does not have to be
+published top down: a follow-up can be disclosed while its parent stays
+sealed, which is what you want when one branch is fixed and the rest is not.
+
+A recursive publish covers the follow-ups stored on this machine. If the
+server knows of others — submitted from a different machine, whose documents
+are not here — it says so rather than quietly leaving them out.
 
 ## Tor
 
@@ -108,14 +159,16 @@ wrapper script can append `--no-tor` without knowing what it overrides.
 
 ## Local Storage
 
-All findings are stored in `~/.vulnhash/`:
+All findings are stored in `~/.vulnhash/`, or in `$VULNHASH_HOME` when that is
+set:
 
 ```
 ~/.vulnhash/
   config.json              # Server URL and auth token
+  .ids/                    # Local id ledger, one marker file per id
   <hash>/
     PROOF.md               # Original proof document
-    meta.json              # Metadata (timestamps, status)
+    meta.json              # Metadata (timestamps, status, parent)
     notes/                 # Additional notes
       2024-01-15_143022.md
 ```
