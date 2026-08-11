@@ -61,9 +61,14 @@ clean:
 #   linux-amd64     yes, zig cc + musl
 #   linux-arm64     yes, zig cc + musl
 #   windows-amd64   yes, mingw-w64
-#   windows-arm64   no  - zig's mingw tree ships no aarch64 import library for
-#                         `synchronization`, so the link fails. Build it on a
-#                         Windows arm64 host (see .github/workflows/release.yml).
+#   windows-arm64   no  - nothing on this side has an aarch64 import library
+#                         for `synchronization`: zig's mingw tree ships only
+#                         api-ms-win-core-synch-*.def, and the
+#                         windows_aarch64_gnullvm crate ships only
+#                         libwindows.0.53.0.a. True of the -gnullvm target as
+#                         well as -gnu, so switching targets does not help.
+#                         Needs a Windows host with the MSVC ARM64 build tools
+#                         (see .github/workflows/release.yml).
 #   darwin-*        possible with a copied SDK, but the Mac builds better
 #                         binaries. See "Cross-building darwin from Linux".
 #
