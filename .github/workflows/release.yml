@@ -4,10 +4,20 @@ name: release
 # workflow artifacts.
 #
 # Two of the six platforms cannot be produced on a Linux box, which is why this
-# exists: macOS needs the Apple SDK to link against libSystem, and Windows
-# arm64 needs a Windows toolchain (zig's mingw tree has no aarch64
-# `synchronization` import library). The rest could be cross-compiled locally
-# with `make release`, but are built here too so one run yields a complete set.
+# exists.
+#
+# macOS is not about libSystem — zig ships that, and `cargo zigbuild` compiles
+# the whole tree. The link fails for want of the IOKit and CoreFoundation
+# framework stubs, which live in the macOS SDK; and current SDKs list only
+# `arm64e-macos` among their stub targets, which zig will not match against
+# plain arm64. A macOS runner sidesteps both.
+#
+# Windows arm64 has no aarch64 import library for `synchronization` anywhere
+# outside a Windows toolchain — not in zig's mingw tree, not in the
+# windows_aarch64_gnullvm crate, for `-gnu` or `-gnullvm` alike.
+#
+# The rest could be cross-compiled locally with `make release`, but are built
+# here too so one run yields a complete set.
 
 on:
   push:
@@ -50,16 +60,33 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # build.rs shells out to npm/esbuild to bundle the local web UI.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
       - name: Install musl toolchain
         if: endsWith(matrix.target, '-linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      # ring compiles its C with clang for aarch64-windows, and clang needs the
+      # MSVC environment to find the arm64 headers and import libraries. Built
+      # without it, the build fails as `failed to find tool "clang"`; built
+      # with clang but no environment, it fails inside curve25519.c instead.
+      #
+      # Done inline rather than through a third-party action: this pipeline
+      # produces signed binaries, and every action it trusts is another party
+      # who can change what ships.
+      #
+      # UNVERIFIED. The arm64 leg has never run here. What is known to work is
+      # the local recipe in the Makefile, on a Windows host with the ARM64 and
+      # clang components installed. Treat a green run as evidence, not proof.
+      - name: Build (windows arm64)
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: cmd
+        run: |
+          for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do set VSPATH=%%i
+          call "%VSPATH%\VC\Auxiliary\Build\vcvarsall.bat" arm64
+          set PATH=%VSPATH%\VC\Tools\Llvm\bin;%PATH%
+          cargo build --release --target aarch64-pc-windows-msvc
+
       - name: Build
+        if: matrix.target != 'aarch64-pc-windows-msvc'
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Stage artifact
