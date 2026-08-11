@@ -104,6 +104,7 @@ enum Commands {
 }
 
 fn main() {
+    restore_sigpipe();
     let cli = Cli::parse();
 
     let result = match cli.command {
@@ -130,6 +131,24 @@ fn main() {
         std::process::exit(1);
     }
 }
+
+/// Die quietly when a pipe closes, the way every other command does.
+///
+/// Rust ignores SIGPIPE at startup, so a closed pipe surfaces as a write
+/// error and `println!` panics on it: `vulnhash show 2 | head -4` printed a
+/// panic and exited 101 instead of simply stopping.
+#[cfg(unix)]
+fn restore_sigpipe() {
+    // Safe in the sense that matters here: this runs before any thread is
+    // started, and it only restores the disposition the OS gives us by
+    // default.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn restore_sigpipe() {}
 
 #[cfg(test)]
 mod tests {

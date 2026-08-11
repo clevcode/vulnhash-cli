@@ -5181,6 +5181,7 @@ dependencies = [
  "clap",
  "dirs",
  "hex",
+ "libc",
  "mime_guess",
  "rpassword",
  "rust-embed",

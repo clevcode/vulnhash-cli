@@ -36,6 +36,10 @@ mime_guess = "2"
 # Config dir
 dirs = "6"
 
+# Only to restore the default SIGPIPE disposition; see main().
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [build-dependencies]
 # build.rs hashes the UI sources to tell whether the committed bundle is stale.
 sha2 = "0.10"
