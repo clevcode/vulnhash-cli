@@ -1,18 +1,17 @@
 use serde::Deserialize;
 use crate::config::Config;
 
+/// The parts of a submission the CLI has a use for.
+///
+/// The server sends more — title, tags, parent id, publication time — and
+/// serde drops what is not named here. Everything the CLI shows about a
+/// submission it holds locally, so there is nothing to gain by mirroring the
+/// full record.
 #[derive(Debug, Deserialize)]
 pub struct HashResponse {
-    pub id: String,
     pub hash: String,
-    pub algorithm: String,
-    pub title: String,
-    pub description: String,
     pub published: bool,
     pub submitted_at: String,
-    pub published_at: Option<String>,
-    #[serde(default)]
-    pub parent_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -84,11 +83,6 @@ impl Client {
         let resp = self
             .do_request("GET", &format!("/api/hashes/{hash}/descendants"), None)
             .await?;
-        serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
-    }
-
-    pub async fn list_hashes(&self) -> Result<Vec<HashResponse>, String> {
-        let resp = self.do_request("GET", "/api/hashes", None).await?;
         serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
     }
 
