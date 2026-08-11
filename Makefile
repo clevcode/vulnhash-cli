@@ -30,8 +30,22 @@ all: build
 build: bundle
 	cargo build --release
 
+# The UI bundle is committed under web/dist, so building needs no toolchain
+# beyond cargo. Nothing to do here; build.rs embeds what is checked in and
+# says so if it no longer matches web/src.
 bundle:
-	@if [ ! -d web/node_modules ]; then cd web && npm install; fi
+	@:
+
+# Regenerate the committed bundle after changing web/src.
+#
+# ccweb resolves npm packages and bundles entirely in Go, so this needs no
+# Node. It is not public, hence the checked-in result: anyone can build the
+# CLI, and only changing its UI needs the tool. Without ccweb, build.rs falls
+# back to npm and esbuild, which produces an equivalent bundle.
+.PHONY: bundle-regen
+bundle-regen:
+	cd ../vulnhash && go run ./cmd/build-web -src ../vulnhash-cli/web -out ../vulnhash-cli/web/dist
+	@echo "regenerated web/dist - commit it"
 
 test:
 	cargo test

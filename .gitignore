@@ -1,6 +1,8 @@
 # Rust build artifacts
 target/
-dist/
+# Anchored: an unanchored dist/ would also swallow web/dist/, which is the
+# committed UI bundle the build embeds.
+/dist/
 
 # Frontend
 web/node_modules/

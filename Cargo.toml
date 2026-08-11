@@ -35,3 +35,7 @@ mime_guess = "2"
 
 # Config dir
 dirs = "6"
+
+[build-dependencies]
+# build.rs hashes the UI sources to tell whether the committed bundle is stale.
+sha2 = "0.10"

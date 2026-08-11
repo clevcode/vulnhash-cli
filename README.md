@@ -39,6 +39,15 @@ cd cli
 make build
 ```
 
+A Rust toolchain is the only requirement. The local web UI ships prebuilt in
+`web/dist/` and is embedded from there, so no Node, npm or network access is
+involved in a build.
+
+Changing the UI is the one thing that needs a bundler. `build.rs` compares
+`web/dist/sources.sha256` against `web/src`, and when they differ it says so
+and rebuilds with esbuild if npm is present, rather than quietly embedding a
+stale interface. Commit the regenerated bundle along with the sources.
+
 ## Quick Start
 
 ```bash
