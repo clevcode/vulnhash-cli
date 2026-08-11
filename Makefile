@@ -50,17 +50,38 @@ clean:
 #   windows-arm64   no  - zig's mingw tree ships no aarch64 import library for
 #                         `synchronization`, so the link fails. Build it on a
 #                         Windows arm64 host (see .github/workflows/release.yml).
-#   darwin-*        no  - not for want of a compiler: `cargo zigbuild --target
-#                         aarch64-apple-darwin` compiles the whole tree, C
-#                         dependencies included, and zig ships libSystem.tbd.
-#                         The link then fails on `framework 'IOKit'` and
-#                         `framework 'CoreFoundation'`, wanted by sysinfo (via
-#                         tor-memquota) and iana-time-zone (via chrono). Zig
-#                         ships no framework stubs; those come from the macOS
-#                         SDK. Build on macOS, where the SDK already is.
+#   darwin-*        possible with a copied SDK, but the Mac builds better
+#                         binaries. See "Cross-building darwin from Linux".
 #
 # The darwin and windows-arm64 rules below still work when run on a host that
 # does have the right toolchain, which is what CI uses.
+#
+# --- Cross-building darwin from Linux ---------------------------------------
+#
+# It does work, with a copy of the macOS SDK:
+#
+#   SDKROOT=~/macos-sdk/MacOSX15.4.sdk PATH=/opt/zig:$$PATH \
+#     cargo zigbuild --release --target aarch64-apple-darwin
+#
+# Both arches link, and the binaries run on a real Mac. Two things to know:
+#
+# It must be an older SDK. `cargo zigbuild` gets the whole tree compiled — C
+# dependencies included, and zig ships libSystem.tbd — then fails at link. With
+# no SDK it cannot find the IOKit and CoreFoundation frameworks that sysinfo
+# (via tor-memquota) and iana-time-zone (via chrono) want. With the current SDK
+# it finds them and still fails, on undefined _kCFAllocatorDefault and friends:
+# those stubs now list only `arm64e-macos` among their targets, and while
+# Apple's linker maps arm64 onto arm64e for system libraries, zig's does not.
+# The 15.x SDKs still list plain `arm64-macos` and link cleanly.
+#
+# It costs reach. Zig defaults macOS binaries to a minimum of 13.0 and there is
+# no way through cargo-zigbuild 0.23.0 to lower it: the wrapper it generates
+# passes `-target aarch64-macos-none` with no version, MACOSX_DEPLOYMENT_TARGET
+# is not threaded through, a second -target on the link line loses to the
+# first, and pointing CC_* at a hand-rolled wrapper breaks cc-rs, which appends
+# a triple of its own. Built on macOS the same source targets 11.0 on arm64 and
+# 10.12 on x86_64 — the deployment target, not the SDK, is what sets that
+# floor, so a newer SDK costs nothing here and an older one buys nothing.
 
 linux-amd64: bundle
 	PATH="$(ZIG_DIR):$$PATH" cargo zigbuild --release --target x86_64-unknown-linux-musl
