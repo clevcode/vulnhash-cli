@@ -102,6 +102,18 @@ impl Client {
         Ok(())
     }
 
+    /// Disclose a sealed finding to one researcher, privately.
+    ///
+    /// The report travels with the grant: the server has no copy of a sealed
+    /// document until it is published or disclosed, and verifies what arrives
+    /// against the registered hash. Naming the finding by its raw hash is fine
+    /// here — the server resolves the caller's own document.
+    pub async fn disclose(&self, hash: &str, username: &str, content: &str) -> Result<(), String> {
+        let body = serde_json::json!({"username": username, "content": content});
+        self.do_request("POST", &format!("/api/hashes/{hash}/disclose"), Some(&body)).await?;
+        Ok(())
+    }
+
     pub async fn publish_hash(&self, hash: &str, content: &str) -> Result<(), String> {
         let body = serde_json::json!({"content": content});
         self.do_request("POST", &format!("/api/hashes/{hash}/publish"), Some(&body)).await?;

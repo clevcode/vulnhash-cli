@@ -85,6 +85,16 @@ enum Commands {
         #[command(flatten)]
         tor: TorArgs,
     },
+    /// Disclose a sealed finding to one researcher, privately
+    Disclose {
+        /// Local id, hash prefix or full hash
+        reference: String,
+        /// The researcher to disclose it to (their username)
+        #[arg(long, short = 't')]
+        to: String,
+        #[command(flatten)]
+        tor: TorArgs,
+    },
     /// Set the details a finding shows publicly, disclosed or not
     Details {
         /// Local id, hash prefix or full hash
@@ -137,6 +147,9 @@ fn main() {
             commands::publish::run(&reference, recursive, tor.choice(), json)
         }
         Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice(), json),
+        Commands::Disclose { reference, to, tor } => {
+            commands::disclose::run(&reference, &to, tor.choice(), json)
+        }
         Commands::Details { reference, title, description, tor } => commands::details::run(
             &reference,
             title.as_deref(),
@@ -240,6 +253,20 @@ mod tests {
                 Commands::Publish { recursive, .. } => assert_eq!(recursive, want, "{args:?}"),
                 _ => panic!("expected a publish command"),
             }
+        }
+    }
+
+    #[test]
+    fn disclose_requires_a_recipient() {
+        // --to is mandatory: disclosing to nobody is meaningless, and a
+        // missing recipient should fail parsing rather than at runtime.
+        assert!(Cli::try_parse_from(["vulnhash", "disclose", "3"]).is_err());
+        match Cli::parse_from(["vulnhash", "disclose", "3", "--to", "acmecorp"]).command {
+            Commands::Disclose { reference, to, .. } => {
+                assert_eq!(reference, "3");
+                assert_eq!(to, "acmecorp");
+            }
+            _ => panic!("expected a disclose command"),
         }
     }
 

@@ -6,4 +6,5 @@ pub mod verify;
 pub mod note;
 pub mod config;
 pub mod details;
+pub mod disclose;
 pub mod server;

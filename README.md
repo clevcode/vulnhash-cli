@@ -79,6 +79,10 @@ vulnhash publish 3
 # Publish a finding together with every follow-up below it
 vulnhash publish 3 -R
 
+# Disclose a sealed finding to one researcher, privately (e.g. a vendor in a
+# dispute) without publishing it
+vulnhash disclose 3 --to acmecorp
+
 # Verify a hash exists
 vulnhash verify <hash>
 

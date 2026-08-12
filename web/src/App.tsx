@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Markdown from "./Markdown";
 
 interface Entry {
   hash: string;
@@ -272,7 +273,9 @@ function EntryDetail({
         title="Proof document"
         note="The exact bytes that were hashed. Publishing reveals this verbatim, and anyone can re-hash it to check it is what you registered."
       >
-        <pre style={styles.proof}>{proof}</pre>
+        <div style={styles.proof}>
+          <Markdown>{proof}</Markdown>
+        </div>
         <p style={styles.byteCount}>
           {new Blob([proof]).size} bytes &rarr; sha256 {entry.hash.slice(0, 16)}...
         </p>
@@ -506,16 +509,11 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: "break-all" as const,
   },
   proof: {
-    background: "#0a0a0f",
-    border: "1px solid #2a2a3a",
-    borderRadius: "8px",
-    padding: "1rem",
-    fontFamily: "monospace",
-    fontSize: "0.85rem",
-    overflowX: "auto",
-    whiteSpace: "pre-wrap" as const,
-    maxHeight: 400,
-    overflowY: "auto",
+    background: "#0d0d14",
+    border: "1px solid #1a1a26",
+    borderRadius: 8,
+    padding: "1rem 1.15rem",
+    overflowX: "auto" as const,
   },
   publishBtn: {
     background: "#00d4aa",

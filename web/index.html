@@ -11,6 +11,50 @@
       *, *::before, *::after { box-sizing: border-box; }
       html, body { margin: 0; padding: 0; background: #0a0a0f; }
       body { overflow-y: auto; }
+
+      /* Rendered proof documents. The rest of this interface is styled inline,
+         but highlight.js works by putting classes on spans, so its palette has
+         to live in a stylesheet. */
+      .markdown { line-height: 1.65; font-size: 0.9rem; overflow-wrap: anywhere; color: #e8e8f0; }
+      .markdown > :first-child { margin-top: 0; }
+      .markdown > :last-child { margin-bottom: 0; }
+      .markdown h1 { font-size: 1.35rem; margin: 1.4em 0 0.5em; }
+      .markdown h2 { font-size: 1.15rem; margin: 1.4em 0 0.5em; }
+      .markdown h3 { font-size: 1rem; margin: 1.3em 0 0.5em; }
+      .markdown p { margin: 0 0 0.9em; }
+      .markdown ul, .markdown ol { margin: 0 0 0.9em; padding-left: 1.4em; }
+      .markdown a { color: #00d4aa; }
+      .markdown blockquote {
+        margin: 0 0 0.9em; padding-left: 0.9rem;
+        border-left: 2px solid #23233a; color: #8888a0;
+      }
+      .markdown table { width: 100%; border-collapse: collapse; margin: 0 0 0.9em; font-size: 0.85rem; }
+      .markdown th, .markdown td { border: 1px solid #23233a; padding: 0.35rem 0.55rem; text-align: left; }
+      .markdown th { background: #12121a; }
+      .markdown code {
+        font-family: ui-monospace, monospace; font-size: 0.85em;
+        background: #12121a; border: 1px solid #23233a; border-radius: 4px; padding: 0.1em 0.35em;
+      }
+      .markdown pre {
+        margin: 0 0 0.9em; padding: 0.8rem 0.9rem; background: #0d0d14;
+        border: 1px solid #23233a; border-radius: 8px; overflow-x: auto;
+      }
+      .markdown pre code { background: none; border: none; padding: 0; font-size: 0.8rem; line-height: 1.55; }
+      .markdown__image {
+        display: inline-block; font-family: ui-monospace, monospace; font-size: 0.75rem;
+        padding: 0.15rem 0.5rem; border: 1px dashed #2c3d56; border-radius: 6px; color: #8888a0;
+      }
+
+      .hljs-comment, .hljs-quote { color: #5a6b85; font-style: italic; }
+      .hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section,
+      .hljs-doctag, .hljs-type, .hljs-name, .hljs-strong { color: #00d4aa; }
+      .hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute { color: #22c55e; }
+      .hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link { color: #e0a458; }
+      .hljs-title, .hljs-title.class_, .hljs-title.function_, .hljs-built_in { color: #7cc4ff; }
+      .hljs-variable, .hljs-template-variable, .hljs-attr, .hljs-property { color: #d6bcfa; }
+      .hljs-deletion { color: #ff7b72; }
+      .hljs-meta { color: #8888a0; }
+      .hljs-emphasis { font-style: italic; }
     </style>
   </head>
   <body>
