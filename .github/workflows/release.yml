@@ -60,6 +60,25 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Without this every job is a cold build of the whole tree — arti, ring,
+      # rustls and some 500 other crates — on runners billed by the minute,
+      # macOS at ten times the rate. actions/cache is GitHub's own; this
+      # pipeline signs what it produces, so it should take on as few outside
+      # parties as it can.
+      #
+      # Keyed on the lockfile, so a dependency change invalidates it and
+      # anything else reuses it. Per platform, since the artifacts differ.
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ matrix.platform }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ matrix.platform }}-cargo-
+
       - name: Install musl toolchain
         if: endsWith(matrix.target, '-linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
