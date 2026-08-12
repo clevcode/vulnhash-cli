@@ -13,7 +13,7 @@ interface Entry {
 }
 
 interface NoteEntry {
-  filename: string;
+  written_at: string;
   content: string;
 }
 
@@ -32,6 +32,12 @@ const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ content }),
     }).then((r) => r.json()),
+  setDetails: (hash: string, title: string, description: string) =>
+    fetch(`/api/entries/${hash}/details`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, description }),
+    }).then((r) => r.json()),
   publish: (hash: string) =>
     fetch(`/api/entries/${hash}/publish`, { method: "POST" }).then((r) =>
       r.json(),
@@ -48,14 +54,35 @@ const api = {
 
 type View = "list" | "detail" | "config";
 
-export default function App() {
-  const [view, setView] = useState<View>("list");
-  const [selectedHash, setSelectedHash] = useState("");
+/// Read the current view out of the URL fragment.
+///
+/// Routing through the fragment rather than component state means a finding
+/// can be linked, bookmarked and reloaded — and that the back button does what
+/// it looks like it does.
+function routeFromHash(): { view: View; hash: string } {
+  const fragment = window.location.hash.slice(1);
+  if (fragment === "/config") return { view: "config", hash: "" };
+  const match = fragment.match(/^\/f\/([a-fA-F0-9]+)$/);
+  if (match) return { view: "detail", hash: match[1] };
+  return { view: "list", hash: "" };
+}
 
-  const showDetail = (hash: string) => {
-    setSelectedHash(hash);
-    setView("detail");
+export default function App() {
+  const [route, setRoute] = useState(routeFromHash);
+
+  useEffect(() => {
+    const onChange = () => setRoute(routeFromHash());
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+
+  const view = route.view;
+  const selectedHash = route.hash;
+  const go = (fragment: string) => {
+    window.location.hash = fragment;
   };
+  const showDetail = (hash: string) => go(`/f/${hash}`);
+  const setView = (v: View) => go(v === "config" ? "/config" : "/");
 
   return (
     <div style={styles.app}>
@@ -75,7 +102,7 @@ export default function App() {
       <main style={styles.main}>
         {view === "list" && <EntryList onSelect={showDetail} />}
         {view === "detail" && (
-          <EntryDetail hash={selectedHash} onBack={() => setView("list")} />
+          <EntryDetail hash={selectedHash} onBack={() => go("/")} />
         )}
         {view === "config" && <Config />}
       </main>
@@ -154,12 +181,39 @@ function EntryDetail({
   const [newNote, setNewNote] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [message, setMessage] = useState("");
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsMessage, setDetailsMessage] = useState("");
 
   useEffect(() => {
-    api.getEntry(hash).then(setEntry);
+    api.getEntry(hash).then((e) => {
+      setEntry(e);
+      setTitle(e.title || "");
+      setDescription(e.description || "");
+    });
     api.getProof(hash).then(setProof);
     api.listNotes(hash).then(setNotes);
   }, [hash]);
+
+  const handleSaveDetails = async () => {
+    setSavingDetails(true);
+    setDetailsMessage("");
+    try {
+      const result = await api.setDetails(hash, title, description);
+      if (result.error) {
+        setDetailsMessage("Saved locally, but the server refused: " + result.error);
+      } else if (result.warning) {
+        setDetailsMessage(result.warning);
+      } else {
+        setDetailsMessage("Saved and visible.");
+      }
+      api.getEntry(hash).then(setEntry);
+    } catch {
+      setDetailsMessage("Could not save.");
+    }
+    setSavingDetails(false);
+  };
 
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
@@ -189,63 +243,86 @@ function EntryDetail({
   return (
     <div>
       <button style={styles.backBtn} onClick={onBack}>
-        &larr; Back
+        &larr; All findings
       </button>
-      <h2 style={styles.heading}>Finding Details</h2>
 
-      <div style={styles.detailCard}>
-        <p>
-          <strong>ID:</strong> {entry.local_id}
-        </p>
-        <p>
-          <strong>Hash:</strong>{" "}
-          <code style={styles.hashFull}>{entry.hash}</code>
-        </p>
-        <p>
-          <strong>Algorithm:</strong> {entry.algorithm}
-        </p>
-        <p>
-          <strong>Submitted:</strong>{" "}
-          {new Date(entry.submitted_at).toLocaleString()}
-        </p>
-        <p>
-          <strong>Published:</strong> {entry.published ? "Yes" : "No"}
-        </p>
-        <p>
-          <strong>Synced:</strong> {entry.synced ? "Yes" : "No"}
-        </p>
-        {entry.parent && (
-          <p>
-            <strong>Follows up on:</strong>{" "}
-            <code style={styles.hashFull}>{entry.parent}</code>
-          </p>
-        )}
+      <div style={styles.detailHead}>
+        <span style={styles.detailId}>{entry.local_id}</span>
+        <code style={styles.detailHash}>{entry.hash}</code>
       </div>
-
-      <h3 style={styles.subheading}>Proof Document</h3>
-      <pre style={styles.proof}>{proof}</pre>
-
-      {!entry.published && (
-        <div style={{ marginBottom: "2rem" }}>
-          <button
-            style={styles.publishBtn}
-            onClick={handlePublish}
-            disabled={publishing}
-          >
-            {publishing ? "Publishing..." : "Publish Finding"}
-          </button>
-          {message && <p style={styles.message}>{message}</p>}
-        </div>
+      <div style={styles.chipRow}>
+        <span style={entry.published ? styles.chipPublished : styles.chipSealed}>
+          {entry.published ? "disclosed" : "sealed"}
+        </span>
+        <span style={entry.synced ? styles.chipOk : styles.chipWarn}>
+          {entry.synced ? "registered with the server" : "local only"}
+        </span>
+        <span style={styles.chipQuiet}>{entry.algorithm}</span>
+        <span style={styles.chipQuiet}>
+          {new Date(entry.submitted_at).toLocaleString()}
+        </span>
+      </div>
+      {entry.parent && (
+        <p style={styles.parentLine}>
+          Follows up on <code style={styles.inlineHash}>{entry.parent}</code>
+        </p>
       )}
 
-      <h3 style={styles.subheading}>Notes ({notes.length})</h3>
-      {notes.map((n) => (
-        <div key={n.filename} style={styles.noteCard}>
-          <p style={styles.noteFilename}>{n.filename}</p>
-          <pre style={styles.noteContent}>{n.content}</pre>
-        </div>
-      ))}
-      <div style={styles.noteForm}>
+      <Section
+        title="Proof document"
+        note="The exact bytes that were hashed. Publishing reveals this verbatim, and anyone can re-hash it to check it is what you registered."
+      >
+        <pre style={styles.proof}>{proof}</pre>
+        <p style={styles.byteCount}>
+          {new Blob([proof]).size} bytes &rarr; sha256 {entry.hash.slice(0, 16)}...
+        </p>
+      </Section>
+
+      <Section
+        title="Public details"
+        note="Visible to anyone browsing your findings, whether or not you have disclosed the document. Use it to stake out an area without saying what you found."
+      >
+        <input
+          style={styles.input}
+          placeholder="Title, e.g. Heap overflow in a widely used parser"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+        />
+        <textarea
+          style={{ ...styles.textarea, marginTop: "0.5rem" }}
+          placeholder="Anything you are willing to say publicly before disclosing."
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          rows={3}
+        />
+        <button style={styles.secondaryBtn} onClick={handleSaveDetails} disabled={savingDetails}>
+          {savingDetails ? "Saving..." : "Save public details"}
+        </button>
+        {detailsMessage && <p style={styles.message}>{detailsMessage}</p>}
+      </Section>
+
+      {!entry.published && (
+        <Section
+          title="Disclose"
+          note="Publishing uploads the proof document and makes it public. It cannot be undone."
+        >
+          <button style={styles.publishBtn} onClick={handlePublish} disabled={publishing}>
+            {publishing ? "Publishing..." : "Publish this finding"}
+          </button>
+          {message && <p style={styles.message}>{message}</p>}
+        </Section>
+      )}
+
+      <Section
+        title={`Private notes (${notes.length})`}
+        note="Working notes for you. They stay in ~/.vulnhash on this machine and are never uploaded, published or hashed."
+      >
+        {notes.map((n) => (
+          <div key={n.written_at} style={styles.noteCard}>
+            <p style={styles.noteWhen}>{formatNoteTime(n.written_at)}</p>
+            <pre style={styles.noteContent}>{n.content}</pre>
+          </div>
+        ))}
         <textarea
           style={styles.textarea}
           placeholder="Add a note..."
@@ -253,12 +330,40 @@ function EntryDetail({
           onChange={(e) => setNewNote(e.target.value)}
           rows={3}
         />
-        <button style={styles.addNoteBtn} onClick={handleAddNote}>
-          Add Note
+        <button style={styles.secondaryBtn} onClick={handleAddNote}>
+          Add note
         </button>
-      </div>
+      </Section>
     </div>
   );
+}
+
+/// A labelled section with a line saying what it is for.
+///
+/// The old layout was a stack of headings and boxes that each assumed you knew
+/// what they meant. The distinction that matters here — what stays on this
+/// machine versus what the world can see — is not something to leave implicit.
+function Section({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section style={styles.section}>
+      <h3 style={styles.sectionTitle}>{title}</h3>
+      <p style={styles.sectionNote}>{note}</p>
+      {children}
+    </section>
+  );
+}
+
+function formatNoteTime(value: string) {
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
 function Config() {
@@ -319,7 +424,10 @@ function Config() {
 
 const styles: Record<string, React.CSSProperties> = {
   app: {
-    minHeight: "100vh",
+    // dvh, not vh: on mobile browsers vh counts the address bar, which pushes
+    // the page over the viewport by exactly the height of a chrome that is not
+    // there.
+    minHeight: "100dvh",
     background: "#0a0a0f",
     color: "#e0e0e8",
     fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -427,6 +535,24 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "1rem",
     marginBottom: "0.5rem",
   },
+  chipSealed: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #23233a", color: "#8888a0" },
+  chipPublished: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #22c55e", color: "#22c55e" },
+  chipOk: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #00d4aa", color: "#00d4aa" },
+  chipWarn: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #6b5f2a", color: "#d4b400" },
+  chipQuiet: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #23233a", color: "#55556a" },
+  detailHead: { display: "flex", alignItems: "baseline", gap: "0.75rem", flexWrap: "wrap" as const, marginTop: "0.5rem" },
+  detailId: { fontFamily: "monospace", fontSize: "1.4rem", color: "#00d4aa" },
+  detailHash: { fontFamily: "monospace", fontSize: "0.85rem", color: "#8888a0", wordBreak: "break-all" as const },
+  chipRow: { display: "flex", gap: "0.4rem", flexWrap: "wrap" as const, margin: "0.75rem 0 0" },
+  chipBase: { fontSize: "0.7rem", padding: "0.15rem 0.5rem", borderRadius: 999, border: "1px solid #23233a" },
+  parentLine: { color: "#8888a0", fontSize: "0.85rem", marginTop: "0.75rem" },
+  inlineHash: { fontFamily: "monospace", color: "#8888a0", fontSize: "0.8rem", wordBreak: "break-all" as const },
+  section: { marginTop: "2rem", paddingTop: "1.25rem", borderTop: "1px solid #1a1a26" },
+  sectionTitle: { fontSize: "1rem", margin: 0 },
+  sectionNote: { color: "#8888a0", fontSize: "0.82rem", margin: "0.35rem 0 0.85rem", maxWidth: "70ch", lineHeight: 1.5 },
+  byteCount: { color: "#55556a", fontFamily: "monospace", fontSize: "0.75rem", margin: "0.4rem 0 0" },
+  secondaryBtn: { marginTop: "0.6rem", padding: "0.5rem 1rem", background: "transparent", color: "#e8e8f0", border: "1px solid #23233a", borderRadius: 6, cursor: "pointer", fontSize: "0.85rem" },
+  noteWhen: { color: "#55556a", fontFamily: "monospace", fontSize: "0.75rem", margin: "0 0 0.35rem" },
   noteFilename: { fontSize: "0.75rem", color: "#8888a0", marginBottom: "0.5rem" },
   noteContent: {
     fontFamily: "monospace",
@@ -473,6 +599,8 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: "1rem",
   },
   input: {
+    // Inputs sized by content look accidental next to a full-width textarea.
+    width: "100%",
     padding: "0.7rem 1rem",
     background: "#0a0a0f",
     border: "1px solid #2a2a3a",

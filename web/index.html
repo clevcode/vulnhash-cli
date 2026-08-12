@@ -4,6 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VulnHash - Local Dashboard</title>
+    <style>
+      /* The browser's default body margin sat outside a 100vh app, which read
+         as a gap at every edge and put the page just over the viewport — hence
+         a scrollbar on a page that fits. */
+      *, *::before, *::after { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: #0a0a0f; }
+      body { overflow-y: auto; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

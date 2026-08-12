@@ -85,7 +85,20 @@ enum Commands {
         #[command(flatten)]
         tor: TorArgs,
     },
-    /// Add a note to a finding
+    /// Set the details a finding shows publicly, disclosed or not
+    Details {
+        /// Local id, hash prefix or full hash
+        reference: String,
+        /// One line saying what this is about
+        #[arg(long, short = 't')]
+        title: Option<String>,
+        /// A longer public description
+        #[arg(long, short = 'd')]
+        description: Option<String>,
+        #[command(flatten)]
+        tor: TorArgs,
+    },
+    /// Add a private note. Notes stay on this machine and are never uploaded
     Note {
         /// Local id, hash prefix or full hash
         reference: String,
@@ -124,6 +137,13 @@ fn main() {
             commands::publish::run(&reference, recursive, tor.choice(), json)
         }
         Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice(), json),
+        Commands::Details { reference, title, description, tor } => commands::details::run(
+            &reference,
+            title.as_deref(),
+            description.as_deref(),
+            tor.choice(),
+            json,
+        ),
         Commands::Note { reference, text } => {
             commands::note::run(&reference, text.as_deref(), json)
         }

@@ -208,6 +208,14 @@ pub fn descendants(hash: &str) -> Result<Vec<Entry>, String> {
     Ok(out)
 }
 
+/// Record the details a finding shows publicly.
+pub fn set_public_details(hash: &str, title: &str, description: &str) -> Result<(), String> {
+    update_entry(hash, |e| {
+        e.title = title.to_string();
+        e.description = description.to_string();
+    })
+}
+
 /// Add a timestamped note.
 pub fn add_note(hash: &str, content: &str) -> Result<(), String> {
     let notes_dir = hash_dir(hash).join("notes");

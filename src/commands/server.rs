@@ -22,6 +22,7 @@ pub fn run(port: u16) -> Result<(), String> {
             .route("/api/entries/{hash}/proof", get(handle_get_proof))
             .route("/api/entries/{hash}/notes", get(handle_list_notes).post(handle_add_note))
             .route("/api/entries/{hash}/publish", post(handle_publish))
+            .route("/api/entries/{hash}/details", axum::routing::put(handle_set_details))
             .route("/api/config", get(handle_get_config).put(handle_set_config))
             // Static files
             .route("/main.js", get(serve_js))
@@ -72,14 +73,66 @@ async fn handle_list_notes(Path(hash): Path<String>) -> impl IntoResponse {
     let notes_dir = config::dir().join(&hash).join("notes");
 
     #[derive(serde::Serialize)]
-    struct NoteEntry { filename: String, content: String }
+    struct NoteEntry { written_at: String, content: String }
 
     let result: Vec<NoteEntry> = notes.into_iter().filter_map(|n| {
         let content = std::fs::read_to_string(notes_dir.join(&n)).ok()?;
-        Some(NoteEntry { filename: n, content })
+        Some(NoteEntry { written_at: note_timestamp(&n), content })
     }).collect();
 
     Json(serde_json::json!(result))
+}
+
+/// Recover the moment a note was written from the name it was filed under.
+///
+/// Notes are stored as 2026-03-28_223323.md. The name is how the store keeps
+/// them ordered and unique; what a reader wants is the time, so hand back an
+/// RFC 3339 timestamp and let the caller format it. A name that does not parse
+/// is passed through rather than dropped — better an odd label than a note
+/// that appears to have come from nowhere.
+fn note_timestamp(filename: &str) -> String {
+    let stem = filename.strip_suffix(".md").unwrap_or(filename);
+    match stem.split_once('_') {
+        Some((date, time)) if date.len() == 10 && time.len() == 6 => {
+            format!("{date}T{}:{}:{}Z", &time[0..2], &time[2..4], &time[4..6])
+        }
+        _ => stem.to_string(),
+    }
+}
+
+/// Set the details this finding shows publicly, locally and on the server.
+///
+/// Local first: the researcher's own copy is the record that must not be lost
+/// if the network is down. The upload is attempted after, and a failure is
+/// reported rather than hidden, since the point of these details is that other
+/// people can see them.
+async fn handle_set_details(
+    Path(hash): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let title = body["title"].as_str().unwrap_or("").to_string();
+    let description = body["description"].as_str().unwrap_or("").to_string();
+
+    if let Err(e) = store::set_public_details(&hash, &title, &description) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e}))).into_response();
+    }
+
+    let cfg = config::load();
+    if cfg.auth_token.is_empty() {
+        return Json(serde_json::json!({
+            "status": "saved_locally",
+            "warning": "no auth token configured, so these details are not visible to anyone yet",
+        })).into_response();
+    }
+
+    let client = client::Client::new(&cfg);
+    match client.update_hash(&hash, &title, &description).await {
+        Ok(()) => Json(serde_json::json!({"status": "published"})).into_response(),
+        Err(e) => (
+            StatusCode::BAD_GATEWAY,
+            Json(serde_json::json!({"status": "saved_locally", "error": e})),
+        ).into_response(),
+    }
 }
 
 async fn handle_add_note(

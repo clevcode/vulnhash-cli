@@ -86,6 +86,22 @@ impl Client {
         serde_json::from_str(&resp).map_err(|e| format!("parse response: {e}"))
     }
 
+    /// Set the details a finding shows publicly.
+    ///
+    /// These are visible from the moment they are set, disclosed or not: a
+    /// researcher can say what a sealed finding is about without revealing the
+    /// document behind it.
+    pub async fn update_hash(
+        &self,
+        hash: &str,
+        title: &str,
+        description: &str,
+    ) -> Result<(), String> {
+        let body = serde_json::json!({"title": title, "description": description});
+        self.do_request("PUT", &format!("/api/hashes/{hash}"), Some(&body)).await?;
+        Ok(())
+    }
+
     pub async fn publish_hash(&self, hash: &str, content: &str) -> Result<(), String> {
         let body = serde_json::json!({"content": content});
         self.do_request("POST", &format!("/api/hashes/{hash}/publish"), Some(&body)).await?;

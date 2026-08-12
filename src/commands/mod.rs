@@ -5,4 +5,5 @@ pub mod publish;
 pub mod verify;
 pub mod note;
 pub mod config;
+pub mod details;
 pub mod server;
