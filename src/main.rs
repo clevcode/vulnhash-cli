@@ -1,6 +1,7 @@
 mod client;
 mod commands;
 mod config;
+mod manifest;
 mod output;
 mod receipt;
 mod store;
@@ -86,6 +87,12 @@ enum Commands {
     Verify {
         /// Local id, hash prefix or full hash
         reference: String,
+        /// Read the immutable public batch from this file instead of GitHub
+        #[arg(long, value_name = "FILE")]
+        manifest: Option<String>,
+        /// Make no network requests; verify through the manifest root only
+        #[arg(long)]
+        offline: bool,
         #[command(flatten)]
         tor: TorArgs,
     },
@@ -168,9 +175,12 @@ fn main() {
             recursive,
             tor,
         } => commands::publish::run(&reference, recursive, tor.choice(), json),
-        Commands::Verify { reference, tor } => {
-            commands::verify::run(&reference, tor.choice(), json)
-        }
+        Commands::Verify {
+            reference,
+            manifest,
+            offline,
+            tor,
+        } => commands::verify::run(&reference, manifest.as_deref(), offline, tor.choice(), json),
         Commands::Receipt {
             reference,
             output,
@@ -354,6 +364,32 @@ mod tests {
                 assert_eq!(tor.choice(), Some(true));
             }
             _ => panic!("expected a receipt command"),
+        }
+    }
+
+    #[test]
+    fn verify_accepts_an_explicit_manifest_and_offline_mode() {
+        match Cli::parse_from([
+            "vulnhash",
+            "verify",
+            "3",
+            "--manifest",
+            "/tmp/batch.json",
+            "--offline",
+        ])
+        .command
+        {
+            Commands::Verify {
+                reference,
+                manifest,
+                offline,
+                ..
+            } => {
+                assert_eq!(reference, "3");
+                assert_eq!(manifest.as_deref(), Some("/tmp/batch.json"));
+                assert!(offline);
+            }
+            _ => panic!("expected a verify command"),
         }
     }
 

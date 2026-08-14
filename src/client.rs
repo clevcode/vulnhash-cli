@@ -27,10 +27,34 @@ pub struct HashResponse {
 #[derive(Debug, Deserialize)]
 pub struct VerifyResponse {
     pub hash: String,
+    #[serde(default)]
+    pub certified_hash: Option<String>,
     pub exists: bool,
     pub submitted_at: Option<String>,
     pub published: bool,
     pub username: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AnchorProofResponse {
+    pub certified_hash: String,
+    #[serde(default)]
+    pub evidence_state: Option<String>,
+    #[serde(default)]
+    pub batch_manifest: Option<ManifestLocator>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ManifestLocator {
+    pub publication_state: String,
+    #[serde(default)]
+    pub repository: Option<String>,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub commit_sha: Option<String>,
+    #[serde(default)]
+    pub raw_url: Option<String>,
 }
 
 pub struct Client {
@@ -156,6 +180,21 @@ impl Client {
         .await
     }
 
+    pub async fn anchor_proof(&self, certified_hash: &str) -> Result<AnchorProofResponse, String> {
+        let body = self
+            .do_request("GET", &format!("/api/anchor/proof/{certified_hash}"), None)
+            .await?;
+        serde_json::from_str(&body).map_err(|e| format!("parse anchor proof response: {e}"))
+    }
+
+    /// Fetch immutable public material without forwarding the VulnHash bearer
+    /// token to its (normally GitHub) host.
+    pub async fn public_get(&self, url: &str) -> Result<String, String> {
+        let (status, body) = self.request_url_raw("GET", url, None, None).await?;
+        check_status(status, &body)?;
+        Ok(body)
+    }
+
     async fn do_request(
         &self,
         method: &str,
@@ -174,6 +213,17 @@ impl Client {
         body: Option<&serde_json::Value>,
     ) -> Result<(u16, String), String> {
         let url = format!("{}{}", self.base_url, path);
+        self.request_url_raw(method, &url, body, Some(&self.auth_token))
+            .await
+    }
+
+    async fn request_url_raw(
+        &self,
+        method: &str,
+        url: &str,
+        body: Option<&serde_json::Value>,
+        auth_token: Option<&str>,
+    ) -> Result<(u16, String), String> {
         let body_bytes = body.map(|b| serde_json::to_vec(b).unwrap());
 
         let resp = if let Some(tor) = &self.tor {
@@ -182,7 +232,7 @@ impl Client {
                 &url,
                 body_bytes.as_deref(),
                 "application/json",
-                Some(&self.auth_token),
+                auth_token,
             )
             .await?
         } else {
@@ -191,7 +241,7 @@ impl Client {
                 &url,
                 body_bytes.as_deref(),
                 "application/json",
-                Some(&self.auth_token),
+                auth_token,
             )
             .await?
         };

@@ -44,6 +44,10 @@ pub fn receipt_path(hash: &str) -> PathBuf {
     hash_dir(hash).join("receipt.json")
 }
 
+pub fn manifest_path(hash: &str) -> PathBuf {
+    hash_dir(hash).join("anchor-batch.json")
+}
+
 /// Directory holding one marker file per allocated local id.
 ///
 /// The markers are the allocation ledger and are never removed, which is what
@@ -120,7 +124,7 @@ pub fn save_receipt(hash: &str, submission_receipt: &SubmissionReceipt) -> Resul
     let proof = get_proof(hash)?;
     submission_receipt.validate_report(&proof)?;
     let data = submission_receipt.to_json()?;
-    atomic_create_private(&receipt_path(hash), &data)
+    atomic_create(&receipt_path(hash), &data, true, "receipt")
 }
 
 /// Read and validate a retained receipt, including its binding to PROOF.md.
@@ -155,7 +159,15 @@ pub fn receipt_bytes(hash: &str) -> Result<Vec<u8>, String> {
 
 /// Export already-validated receipt bytes without silently replacing a file.
 pub fn export_receipt(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
-    atomic_create_private(path, data)
+    atomic_create(path, data, true, "receipt")
+}
+
+pub fn save_manifest(hash: &str, data: &[u8]) -> Result<(), String> {
+    atomic_create(&manifest_path(hash), data, false, "batch manifest")
+}
+
+pub fn manifest_bytes(hash: &str) -> Result<Vec<u8>, String> {
+    std::fs::read(manifest_path(hash)).map_err(|e| format!("read cached batch manifest: {e}"))
 }
 
 /// List all locally stored entries, sorted by submitted_at descending.
@@ -349,21 +361,29 @@ fn save_meta(path: &std::path::Path, entry: &Entry) -> Result<(), String> {
 /// Create a file in its final directory, sync its contents, and publish it by
 /// rename. Receipts are immutable; an existing valid byte-for-byte receipt is
 /// success, while different bytes are never silently overwritten.
-fn atomic_create_private(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
+fn atomic_create(
+    path: &std::path::Path,
+    data: &[u8],
+    private: bool,
+    description: &str,
+) -> Result<(), String> {
     if path.exists() {
-        let existing = std::fs::read(path).map_err(|e| format!("read existing receipt: {e}"))?;
+        let existing =
+            std::fs::read(path).map_err(|e| format!("read existing {description}: {e}"))?;
         if existing == data {
-            set_private_permissions(path)?;
+            set_file_permissions(path, private, description)?;
             return Ok(());
         }
-        return Err("a different receipt already exists; refusing to overwrite it".into());
+        return Err(format!(
+            "a different {description} already exists; refusing to overwrite it"
+        ));
     }
 
     static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     let name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("receipt.json");
+        .unwrap_or("vulnhash-evidence");
     let temp = path.with_file_name(format!(
         ".{name}.tmp-{}-{}",
         std::process::id(),
@@ -375,21 +395,22 @@ fn atomic_create_private(path: &std::path::Path, data: &[u8]) -> Result<(), Stri
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        options.mode(if private { 0o600 } else { 0o644 });
     }
 
     let result = (|| {
         let mut file = options
             .open(&temp)
-            .map_err(|e| format!("create receipt temp file: {e}"))?;
+            .map_err(|e| format!("create {description} temp file: {e}"))?;
         file.write_all(data)
-            .map_err(|e| format!("write receipt: {e}"))?;
-        file.sync_all().map_err(|e| format!("sync receipt: {e}"))?;
+            .map_err(|e| format!("write {description}: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("sync {description}: {e}"))?;
         drop(file);
-        std::fs::hard_link(&temp, path).map_err(|e| format!("publish receipt: {e}"))?;
-        std::fs::remove_file(&temp).map_err(|e| format!("remove receipt temp link: {e}"))?;
-        set_private_permissions(path)?;
-        sync_parent(path)?;
+        std::fs::hard_link(&temp, path).map_err(|e| format!("publish {description}: {e}"))?;
+        std::fs::remove_file(&temp).map_err(|e| format!("remove {description} temp link: {e}"))?;
+        set_file_permissions(path, private, description)?;
+        sync_parent(path, description)?;
         Ok(())
     })();
 
@@ -400,30 +421,39 @@ fn atomic_create_private(path: &std::path::Path, data: &[u8]) -> Result<(), Stri
 }
 
 #[cfg(unix)]
-fn set_private_permissions(path: &std::path::Path) -> Result<(), String> {
+fn set_file_permissions(
+    path: &std::path::Path,
+    private: bool,
+    description: &str,
+) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
-        .map_err(|e| format!("set receipt permissions: {e}"))
+    let mode = if private { 0o600 } else { 0o644 };
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
+        .map_err(|e| format!("set {description} permissions: {e}"))
 }
 
 #[cfg(not(unix))]
-fn set_private_permissions(_path: &std::path::Path) -> Result<(), String> {
+fn set_file_permissions(
+    _path: &std::path::Path,
+    _private: bool,
+    _description: &str,
+) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(unix)]
-fn sync_parent(path: &std::path::Path) -> Result<(), String> {
+fn sync_parent(path: &std::path::Path, description: &str) -> Result<(), String> {
     let parent = path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or_else(|| std::path::Path::new("."));
     std::fs::File::open(parent)
         .and_then(|file| file.sync_all())
-        .map_err(|e| format!("sync receipt directory: {e}"))
+        .map_err(|e| format!("sync {description} directory: {e}"))
 }
 
 #[cfg(not(unix))]
-fn sync_parent(_path: &std::path::Path) -> Result<(), String> {
+fn sync_parent(_path: &std::path::Path, _description: &str) -> Result<(), String> {
     Ok(())
 }
 
