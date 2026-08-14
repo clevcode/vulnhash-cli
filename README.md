@@ -173,32 +173,33 @@ safe to log.
 
 ## Tor
 
-Any command that talks to VulnHash, GitHub, or a Base RPC provider can use the
-same embedded Arti client:
+The CLI has built-in Tor support and uses it by default. No separate Tor daemon
+needs to be installed or managed. This applies to every command that talks to
+VulnHash, GitHub, or a Base RPC provider:
 
 ```bash
-vulnhash submit ./my-finding.md --tor
+vulnhash submit ./my-finding.md
 ```
 
-To make that the default for every command, set it in the config:
+The default persistent setting can be inspected or changed explicitly:
 
 ```bash
-vulnhash config tor on            # route everything through Tor
-vulnhash config tor-ephemeral on  # keep no Tor state on disk
 vulnhash config                   # show current settings
+vulnhash config tor off           # use direct connections by default
+vulnhash config tor on            # restore the Tor default
+vulnhash config tor-ephemeral on  # keep no Tor state on disk
 ```
 
-By default, Tor mode selects the official onion origin compiled into the signed
-release. If the build has no official onion address, it fails closed. It does
-not silently contact `vulnhash.com` through an exit. An operator or development
-build can set the exact v3 address explicitly:
+Tor mode automatically selects the official onion origin compiled into the
+signed release. Until an official onion address is available, it reaches the
+HTTPS service through a Tor exit. An operator or development build can set an
+exact v3 address explicitly:
 
 ```bash
 vulnhash config onion-server http://<56-character-address>.onion
 ```
 
-To deliberately use the clearnet service through a Tor exit instead, explicitly
-select its HTTPS URL:
+To select the clearnet service through a Tor exit explicitly, set its HTTPS URL:
 
 ```bash
 vulnhash config server https://vulnhash.com
@@ -210,10 +211,10 @@ either direction. Each network command reports `direct`, `tor-onion`, or
 
 | config | flag | result |
 | --- | --- | --- |
-| off | *(none)* | direct |
-| off | `--tor` | Tor |
 | on | *(none)* | Tor |
 | on | `--no-tor` | direct |
+| off | *(none)* | direct |
+| off | `--tor` | Tor |
 
 Passing both is not an error: the last one on the command line wins, so a
 wrapper script can append `--no-tor` without knowing what it overrides.

@@ -25,8 +25,8 @@ pub struct Config {
     /// Read-only endpoint used to independently check Base anchor evidence.
     #[serde(default = "default_base_rpc")]
     pub base_rpc: String,
-    /// Route every request through Tor without needing --tor each time.
-    #[serde(default)]
+    /// Route every request through Tor unless the user explicitly opts out.
+    #[serde(default = "default_tor")]
     pub tor: bool,
     /// Keep no Tor state on disk. Slower to start, leaves no trace of use.
     #[serde(default)]
@@ -41,6 +41,10 @@ fn default_base_rpc() -> String {
     DEFAULT_BASE_RPC.to_string()
 }
 
+fn default_tor() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -49,7 +53,7 @@ impl Default for Config {
             official_onion_server: String::new(),
             auth_token: String::new(),
             base_rpc: DEFAULT_BASE_RPC.to_string(),
-            tor: false,
+            tor: default_tor(),
             tor_ephemeral: false,
         }
     }
@@ -129,13 +133,11 @@ impl Config {
         } else {
             &self.official_onion_server
         };
-        validate_onion_url(onion).map_err(|error| {
-            if onion.is_empty() {
-                "Tor was requested but this build has no official onion endpoint; configure one with 'vulnhash config onion-server http://<address>.onion', or explicitly select clearnet-over-exit with 'vulnhash config server https://vulnhash.com'".to_string()
-            } else {
-                format!("invalid configured official onion endpoint: {error}")
-            }
-        })?;
+        if onion.is_empty() {
+            return Ok((DEFAULT_SERVER.to_string(), TorRoute::Exit));
+        }
+        validate_onion_url(onion)
+            .map_err(|error| format!("invalid configured official onion endpoint: {error}"))?;
         Ok((onion.to_string(), TorRoute::Onion))
     }
 
@@ -233,11 +235,21 @@ mod tests {
     }
 
     #[test]
+    fn tor_is_enabled_by_default_including_when_deserializing_old_minimal_config() {
+        assert!(Config::default().tor);
+        let cfg: Config = serde_json::from_str("{}").unwrap();
+        assert!(cfg.tor);
+    }
+
+    #[test]
     #[allow(clippy::const_is_empty)]
-    fn tor_fails_closed_without_an_onion_or_explicit_exit() {
+    fn tor_uses_the_default_https_origin_until_an_official_onion_is_built_in() {
         let cfg = Config::default();
         if BUILT_IN_ONION_SERVER.is_empty() {
-            assert!(cfg.tor_server().unwrap_err().contains("no official onion"));
+            assert_eq!(
+                cfg.tor_server().unwrap(),
+                (DEFAULT_SERVER.to_string(), TorRoute::Exit)
+            );
         }
     }
 }
