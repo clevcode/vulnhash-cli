@@ -1,9 +1,10 @@
-use crate::{client::Client, config, manifest, output, store};
+use crate::{base, client::Client, config, manifest, output, store};
 
 pub fn run(
     reference: &str,
     manifest_file: Option<&str>,
     offline: bool,
+    rpc_override: Option<&str>,
     tor: Option<bool>,
     json: bool,
 ) -> Result<(), String> {
@@ -12,7 +13,7 @@ pub fn run(
     // A retained receipt changes the question from "does the service say this
     // hash exists?" to independently validating the portable evidence.
     if manifest_file.is_some() || offline || store::receipt_path(&hash).exists() {
-        return verify_evidence(&hash, manifest_file, offline, tor, json);
+        return verify_evidence(&hash, manifest_file, offline, rpc_override, tor, json);
     }
 
     if offline {
@@ -25,6 +26,7 @@ fn verify_evidence(
     hash: &str,
     manifest_file: Option<&str>,
     offline: bool,
+    rpc_override: Option<&str>,
     tor: Option<bool>,
     json: bool,
 ) -> Result<(), String> {
@@ -38,6 +40,11 @@ fn verify_evidence(
     {
         return Err("on-chain anchor time precedes the receipt's server timestamp".into());
     }
+    let chain = if offline {
+        None
+    } else {
+        Some(verify_chain(batch, rpc_override, tor)?)
+    };
 
     if json {
         output::print(&serde_json::json!({
@@ -58,11 +65,13 @@ fn verify_evidence(
                 "transaction_hash": batch.chain_anchor.transaction_hash,
                 "block_number": batch.chain_anchor.block_number,
                 "anchored_at_unix": batch.chain_anchor.anchored_at_unix,
-                "live_chain_queried": false,
-                "live_chain_verified": false,
+                "live_chain_queried": chain.is_some(),
+                "live_chain_verified": chain.is_some(),
+                "latest_block": chain.as_ref().map(|verified| verified.latest_block),
+                "confirmations": chain.as_ref().map(|verified| verified.confirmations),
             },
             "offline": offline,
-            "status": "evidence-valid-chain-not-queried",
+            "status": if offline { "offline-evidence-verified" } else { "independently-verified" },
         }));
         return Ok(());
     }
@@ -84,13 +93,36 @@ fn verify_evidence(
         "Anchor timestamp: {} (Unix)",
         batch.chain_anchor.anchored_at_unix
     );
-    println!("Chain state:      NOT QUERIED");
-    if offline {
-        println!("Result: OFFLINE EVIDENCE VERIFIED; current Base state was not queried.");
+    if let Some(chain) = chain {
+        println!(
+            "Chain state:      VERIFIED at block {} ({} confirmations)",
+            chain.latest_block, chain.confirmations
+        );
+        println!("Result: INDEPENDENTLY VERIFIED against Base mainnet.");
     } else {
-        println!("Result: EVIDENCE VERIFIED; live Base verification is still required.");
+        println!("Chain state:      NOT QUERIED");
+        println!("Result: OFFLINE EVIDENCE VERIFIED; current Base state was not queried.");
     }
     Ok(())
+}
+
+fn verify_chain(
+    manifest: &manifest::BatchManifest,
+    rpc_override: Option<&str>,
+    tor: Option<bool>,
+) -> Result<base::ChainVerification, String> {
+    let cfg = config::load();
+    let rpc_url = rpc_override.unwrap_or(&cfg.base_rpc);
+    if rpc_url.is_empty() {
+        return Err(
+            "no Base RPC is configured; set one with 'vulnhash config base-rpc URL'".into(),
+        );
+    }
+    let runtime = tokio::runtime::Runtime::new().map_err(|e| format!("runtime: {e}"))?;
+    runtime.block_on(async {
+        let client = Client::connect(&cfg, tor, false).await?;
+        base::verify(&client, rpc_url, manifest).await
+    })
 }
 
 fn load_manifest(

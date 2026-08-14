@@ -31,6 +31,20 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
                 println!("Auth token saved.");
             }
         }
+        (Some("base-rpc"), Some(v)) => {
+            validate_rpc_url(v)?;
+            cfg.base_rpc = v.to_string();
+            cfg.save()?;
+            if json {
+                output::print(&serde_json::json!({
+                    "status": "ok",
+                    "key": "base-rpc",
+                    "host": rpc_host(v),
+                }));
+            } else {
+                println!("Base RPC set to host: {}", rpc_host(v));
+            }
+        }
         (Some("tor"), Some(v)) => {
             cfg.tor = parse_bool(v)?;
             cfg.save()?;
@@ -60,7 +74,7 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
         }
         (Some(k), _) => {
             return Err(format!(
-                "unknown config key: {k} (valid: server, token, tor, tor-ephemeral)"
+                "unknown config key: {k} (valid: server, token, base-rpc, tor, tor-ephemeral)"
             ));
         }
         (None, _) if json => {
@@ -69,6 +83,7 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
             output::print(&serde_json::json!({
                 "server": cfg.server,
                 "auth_token_set": !cfg.auth_token.is_empty(),
+                "base_rpc_host": rpc_host(&cfg.base_rpc),
                 "tor": cfg.tor,
                 "tor_ephemeral": cfg.tor_ephemeral,
                 "config_path": config::path().display().to_string(),
@@ -89,6 +104,7 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
                 println!("Auth Token:    (not set)");
             }
             println!("Tor:           {}", if cfg.tor { "on" } else { "off" });
+            println!("Base RPC:      {}", rpc_host(&cfg.base_rpc));
             println!(
                 "Tor Ephemeral: {}",
                 if cfg.tor_ephemeral { "on" } else { "off" }
@@ -100,9 +116,28 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
     Ok(())
 }
 
+fn validate_rpc_url(value: &str) -> Result<(), String> {
+    let parsed = url::Url::parse(value).map_err(|e| format!("invalid Base RPC URL: {e}"))?;
+    match parsed.scheme() {
+        "https" => Ok(()),
+        "http" if matches!(parsed.host_str(), Some("localhost" | "127.0.0.1" | "::1")) => Ok(()),
+        "http" => {
+            Err("Base RPC must use HTTPS unless it is a loopback development endpoint".into())
+        }
+        scheme => Err(format!("unsupported Base RPC URL scheme {scheme:?}")),
+    }
+}
+
+fn rpc_host(value: &str) -> String {
+    url::Url::parse(value)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "(invalid)".into())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parse_bool;
+    use super::{parse_bool, rpc_host, validate_rpc_url};
 
     #[test]
     fn accepts_the_usual_spellings() {
@@ -118,5 +153,16 @@ mod tests {
     fn rejects_anything_else() {
         assert!(parse_bool("maybe").is_err());
         assert!(parse_bool("").is_err());
+    }
+
+    #[test]
+    fn rpc_urls_require_tls_except_on_loopback() {
+        assert!(validate_rpc_url("https://mainnet.base.org").is_ok());
+        assert!(validate_rpc_url("http://127.0.0.1:8545").is_ok());
+        assert!(validate_rpc_url("http://rpc.example").is_err());
+        assert_eq!(
+            rpc_host("https://secret.example/v1/api-key"),
+            "secret.example"
+        );
     }
 }

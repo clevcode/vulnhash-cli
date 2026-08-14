@@ -1,3 +1,4 @@
+mod base;
 mod client;
 mod commands;
 mod config;
@@ -93,6 +94,9 @@ enum Commands {
         /// Make no network requests; verify through the manifest root only
         #[arg(long)]
         offline: bool,
+        /// Override the configured read-only Base JSON-RPC endpoint
+        #[arg(long, value_name = "URL", conflicts_with = "offline")]
+        rpc: Option<String>,
         #[command(flatten)]
         tor: TorArgs,
     },
@@ -142,7 +146,7 @@ enum Commands {
     /// Configure server, auth token and Tor. Run with no arguments to show
     /// the current settings.
     Config {
-        /// Config key to set: server, token, tor, tor-ephemeral
+        /// Config key to set: server, token, base-rpc, tor, tor-ephemeral
         key: Option<String>,
         /// Value to set
         value: Option<String>,
@@ -179,8 +183,16 @@ fn main() {
             reference,
             manifest,
             offline,
+            rpc,
             tor,
-        } => commands::verify::run(&reference, manifest.as_deref(), offline, tor.choice(), json),
+        } => commands::verify::run(
+            &reference,
+            manifest.as_deref(),
+            offline,
+            rpc.as_deref(),
+            tor.choice(),
+            json,
+        ),
         Commands::Receipt {
             reference,
             output,
@@ -383,11 +395,13 @@ mod tests {
                 reference,
                 manifest,
                 offline,
+                rpc,
                 ..
             } => {
                 assert_eq!(reference, "3");
                 assert_eq!(manifest.as_deref(), Some("/tmp/batch.json"));
                 assert!(offline);
+                assert_eq!(rpc, None);
             }
             _ => panic!("expected a verify command"),
         }

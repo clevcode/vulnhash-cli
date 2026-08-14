@@ -5198,9 +5198,11 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "sha3",
  "tokio",
  "tower",
  "tower-http",
+ "url",
  "uuid",
  "vulnhash-crypto",
 ]

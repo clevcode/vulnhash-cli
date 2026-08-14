@@ -407,7 +407,23 @@ fn atomic_create(
         file.sync_all()
             .map_err(|e| format!("sync {description}: {e}"))?;
         drop(file);
-        std::fs::hard_link(&temp, path).map_err(|e| format!("publish {description}: {e}"))?;
+        match std::fs::hard_link(&temp, path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                let existing = std::fs::read(path)
+                    .map_err(|e| format!("read concurrently created {description}: {e}"))?;
+                if existing != data {
+                    return Err(format!(
+                        "a different {description} was created concurrently; refusing to overwrite it"
+                    ));
+                }
+                std::fs::remove_file(&temp)
+                    .map_err(|e| format!("remove {description} temp file: {e}"))?;
+                set_file_permissions(path, private, description)?;
+                return Ok(());
+            }
+            Err(error) => return Err(format!("publish {description}: {error}")),
+        }
         std::fs::remove_file(&temp).map_err(|e| format!("remove {description} temp link: {e}"))?;
         set_file_permissions(path, private, description)?;
         sync_parent(path, description)?;

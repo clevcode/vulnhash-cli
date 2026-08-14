@@ -195,6 +195,17 @@ impl Client {
         Ok(body)
     }
 
+    /// POST public JSON without ever forwarding the VulnHash bearer token.
+    pub async fn public_post_json(
+        &self,
+        url: &str,
+        body: &serde_json::Value,
+    ) -> Result<String, String> {
+        let (status, body) = self.request_url_raw("POST", url, Some(body), None).await?;
+        check_status(status, &body)?;
+        Ok(body)
+    }
+
     async fn do_request(
         &self,
         method: &str,

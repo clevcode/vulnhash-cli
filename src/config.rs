@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 const DEFAULT_SERVER: &str = "https://vulnhash.com";
+const DEFAULT_BASE_RPC: &str = "https://mainnet.base.org";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Config {
@@ -9,6 +10,9 @@ pub struct Config {
     pub server: String,
     #[serde(default)]
     pub auth_token: String,
+    /// Read-only endpoint used to independently check Base anchor evidence.
+    #[serde(default = "default_base_rpc")]
+    pub base_rpc: String,
     /// Route every request through Tor without needing --tor each time.
     #[serde(default)]
     pub tor: bool,
@@ -21,11 +25,16 @@ fn default_server() -> String {
     DEFAULT_SERVER.to_string()
 }
 
+fn default_base_rpc() -> String {
+    DEFAULT_BASE_RPC.to_string()
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
             server: DEFAULT_SERVER.to_string(),
             auth_token: String::new(),
+            base_rpc: DEFAULT_BASE_RPC.to_string(),
             tor: false,
             tor_ephemeral: false,
         }
