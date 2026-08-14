@@ -278,6 +278,11 @@ GitHub URL returned by the API is only a convenience locator; verification
 checks the commit pin, schema, ordered leaves, root, chain identity, and anchor
 metadata.
 
+The public batch log, versioned schemas, deployed contract metadata,
+dependency-free verifier, and mirroring instructions are available at
+[`clevcode/vulnhash-data`](https://github.com/clevcode/vulnhash-data). Batch
+data is CC0-1.0; repository tooling and documentation are MIT-licensed.
+
 ## Local Storage
 
 All findings are stored in `~/.vulnhash/`, or in `$VULNHASH_HOME` when that is
