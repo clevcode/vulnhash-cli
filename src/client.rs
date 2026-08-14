@@ -137,7 +137,7 @@ impl Client {
 
     /// Set the details a finding shows publicly.
     ///
-    /// These are visible from the moment they are set, disclosed or not: a
+    /// These are visible from the moment they are set, published or not: a
     /// researcher can say what a sealed finding is about without revealing the
     /// document behind it.
     pub async fn update_hash(
@@ -148,17 +148,6 @@ impl Client {
     ) -> Result<(), String> {
         let body = serde_json::json!({"title": title, "description": description});
         self.do_request("PUT", &format!("/api/hashes/{hash}"), Some(&body))
-            .await?;
-        Ok(())
-    }
-
-    /// Invoke the legacy server-readable disclosure endpoint.
-    ///
-    /// Public-beta servers reject this write. The method remains for old
-    /// self-hosted instances and must not be described as end-to-end encrypted.
-    pub async fn disclose(&self, hash: &str, username: &str, content: &str) -> Result<(), String> {
-        let body = serde_json::json!({"username": username, "content": content});
-        self.do_request("POST", &format!("/api/hashes/{hash}/disclose"), Some(&body))
             .await?;
         Ok(())
     }

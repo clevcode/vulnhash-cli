@@ -74,7 +74,7 @@ pub fn run(
                 if !description.is_empty() {
                     println!("  description: {description}");
                 }
-                println!("Visible to anyone browsing your findings, disclosed or not.");
+                println!("Visible to anyone browsing your findings, published or not.");
             }
             Err(e) => {
                 eprintln!("warning: saved locally, but the server refused: {e}");

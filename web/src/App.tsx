@@ -253,7 +253,7 @@ function EntryDetail({
       </div>
       <div style={styles.chipRow}>
         <span style={entry.published ? styles.chipPublished : styles.chipSealed}>
-          {entry.published ? "disclosed" : "sealed"}
+          {entry.published ? "published" : "sealed"}
         </span>
         <span style={entry.synced ? styles.chipOk : styles.chipWarn}>
           {entry.synced ? "registered with the server" : "local only"}
@@ -283,7 +283,7 @@ function EntryDetail({
 
       <Section
         title="Public details"
-        note="Visible to anyone browsing your findings, whether or not you have disclosed the document. Use it to stake out an area without saying what you found."
+        note="Visible to anyone browsing your findings, whether or not you have published the document. Use it to stake out an area without saying what you found."
       >
         <input
           style={styles.input}
@@ -293,7 +293,7 @@ function EntryDetail({
         />
         <textarea
           style={{ ...styles.textarea, marginTop: "0.5rem" }}
-          placeholder="Anything you are willing to say publicly before disclosing."
+          placeholder="Anything you are willing to say publicly before publishing."
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           rows={3}
@@ -306,7 +306,7 @@ function EntryDetail({
 
       {!entry.published && (
         <Section
-          title="Disclose"
+          title="Publish"
           note="Publishing uploads the proof document and makes it public. It cannot be undone."
         >
           <button style={styles.publishBtn} onClick={handlePublish} disabled={publishing}>

@@ -83,7 +83,7 @@ vulnhash submit ./deeper-finding.md --parent 3
 # Add notes
 vulnhash note 3 "Additional context about this finding"
 
-# Publish when ready to disclose
+# Publish when ready
 vulnhash publish 3
 
 # Publish a finding together with every follow-up below it
@@ -127,8 +127,8 @@ vulnhash submit ./second-bug.md --parent 1   # id 2, a follow-up to 1
 vulnhash submit ./deeper.md --parent 2       # id 3, a follow-up to 2
 ```
 
-Publishing stays deliberate. `vulnhash publish 1` discloses that one
-submission and nothing else; `-R` discloses it together with everything below
+Publishing stays deliberate. `vulnhash publish 1` publishes that one
+submission and nothing else; `-R` publishes it together with everything below
 it:
 
 ```bash
@@ -136,7 +136,7 @@ vulnhash publish 1 -R
 ```
 
 The tree does not have to be published as a unit, and it does not have to be
-published top down: a follow-up can be disclosed while its parent stays
+published top down: a follow-up can be published while its parent stays
 sealed, which is what you want when one branch is fixed and the rest is not.
 
 A recursive publish covers the follow-ups stored on this machine. If the

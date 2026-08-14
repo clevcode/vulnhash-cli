@@ -1,6 +1,5 @@
 pub mod config;
 pub mod details;
-pub mod disclose;
 pub mod list;
 pub mod note;
 pub mod publish;
