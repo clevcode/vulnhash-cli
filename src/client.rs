@@ -1,4 +1,7 @@
-use crate::{config::Config, receipt::SubmissionReceipt};
+use crate::{
+    config::{self, Config, TorRoute},
+    receipt::SubmissionReceipt,
+};
 use serde::Deserialize;
 
 /// The parts of a submission the CLI has a use for.
@@ -72,11 +75,11 @@ impl Client {
         }
     }
 
-    pub async fn with_tor(cfg: &Config, ephemeral: bool) -> Result<Self, String> {
+    async fn with_tor(cfg: &Config, base_url: String, ephemeral: bool) -> Result<Self, String> {
         let state_dir = crate::config::dir().join("tor");
         let tor = vulnhash_crypto::tor::TorClient::new(&state_dir, ephemeral).await?;
         Ok(Self {
-            base_url: cfg.server.clone(),
+            base_url,
             auth_token: cfg.auth_token.clone(),
             tor: Some(tor),
         })
@@ -88,9 +91,21 @@ impl Client {
     /// configured setting applies.
     pub async fn connect(cfg: &Config, tor: Option<bool>, ephemeral: bool) -> Result<Self, String> {
         if tor.unwrap_or(cfg.tor) {
-            eprintln!("Routing over Tor (bootstrapping may take a moment)...");
-            Self::with_tor(cfg, ephemeral || cfg.tor_ephemeral).await
+            let (endpoint, route) = cfg.tor_server()?;
+            let route = match route {
+                TorRoute::Onion => "tor-onion",
+                TorRoute::Exit => "tor-exit",
+            };
+            eprintln!(
+                "Transport: {route} to {} (bootstrapping may take a moment)...",
+                endpoint_host(&endpoint)
+            );
+            Self::with_tor(cfg, endpoint, ephemeral || cfg.tor_ephemeral).await
         } else {
+            if config::is_onion_url(&cfg.server) {
+                return Err("refusing to connect to a .onion endpoint without Tor".into());
+            }
+            eprintln!("Transport: direct to {}", endpoint_host(&cfg.server));
             Ok(Self::new(cfg))
         }
     }
@@ -235,6 +250,9 @@ impl Client {
         body: Option<&serde_json::Value>,
         auth_token: Option<&str>,
     ) -> Result<(u16, String), String> {
+        if self.tor.is_none() && config::is_onion_url(url) {
+            return Err("refusing to pass a .onion endpoint to direct DNS; enable Tor".into());
+        }
         let body_bytes = body.map(|b| serde_json::to_vec(b).unwrap());
 
         let resp = if let Some(tor) = &self.tor {
@@ -259,6 +277,13 @@ impl Client {
 
         Ok((resp.status, resp.body))
     }
+}
+
+fn endpoint_host(value: &str) -> String {
+    url::Url::parse(value)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "(invalid endpoint)".into())
 }
 
 /// Turn an error status into a message, preferring the server's own wording.

@@ -48,7 +48,7 @@ impl TorClient {
         let parsed = url::Url::parse(url).map_err(|e| format!("parse url: {e}"))?;
         let host = parsed.host_str().ok_or("no host in url")?.to_string();
         let port = parsed.port_or_known_default().ok_or("no port")?;
-        let is_https = parsed.scheme() == "https";
+        let is_https = use_tls(&parsed)?;
 
         // The request target must carry the query string; sending only the path
         // would silently drop parameters.
@@ -80,11 +80,27 @@ impl TorClient {
                 .await
                 .map_err(|e| format!("tls handshake: {e}"))?;
 
-            self.do_http_request(tls_stream, &host, &target, method, body, content_type, auth_token)
-                .await
+            self.do_http_request(
+                tls_stream,
+                &host,
+                &target,
+                method,
+                body,
+                content_type,
+                auth_token,
+            )
+            .await
         } else {
-            self.do_http_request(stream, &host, &target, method, body, content_type, auth_token)
-                .await
+            self.do_http_request(
+                stream,
+                &host,
+                &target,
+                method,
+                body,
+                content_type,
+                auth_token,
+            )
+            .await
         }
     }
 
@@ -140,5 +156,32 @@ impl TorClient {
         let body = read_body(resp.into_body()).await?;
 
         Ok(HttpResponse { status, body })
+    }
+}
+
+fn use_tls(url: &url::Url) -> Result<bool, String> {
+    let is_onion = url
+        .host_str()
+        .map(|host| host.ends_with(".onion"))
+        .unwrap_or(false);
+    match url.scheme() {
+        "https" => Ok(true),
+        "http" if is_onion => Ok(false),
+        "http" => Err("refusing plaintext HTTP through a Tor exit".into()),
+        scheme => Err(format!("unsupported url scheme: {scheme}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::use_tls;
+
+    #[test]
+    fn plaintext_is_allowed_only_for_self_authenticating_onion_hosts() {
+        let onion = format!("http://{}.onion/", "a".repeat(56));
+        assert!(!use_tls(&url::Url::parse(&onion).unwrap()).unwrap());
+        assert!(use_tls(&url::Url::parse("https://example.com/").unwrap()).unwrap());
+        assert!(use_tls(&url::Url::parse("http://example.com/").unwrap()).is_err());
+        assert!(use_tls(&url::Url::parse("ftp://example.com/").unwrap()).is_err());
     }
 }

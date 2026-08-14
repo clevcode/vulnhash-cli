@@ -146,7 +146,7 @@ enum Commands {
     /// Configure server, auth token and Tor. Run with no arguments to show
     /// the current settings.
     Config {
-        /// Config key to set: server, token, base-rpc, tor, tor-ephemeral
+        /// Config key to set: server, onion-server, token, base-rpc, tor, tor-ephemeral
         key: Option<String>,
         /// Value to set
         value: Option<String>,

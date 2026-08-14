@@ -14,12 +14,39 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
 
     match (key, value) {
         (Some("server"), Some(v)) => {
+            if config::is_onion_url(v) {
+                config::validate_onion_url(v)?;
+            }
             cfg.server = v.to_string();
+            cfg.server_explicit = true;
             cfg.save()?;
             if json {
                 output::print(&serde_json::json!({"status": "ok", "key": "server"}));
             } else {
                 println!("Server set to: {v}");
+            }
+        }
+        (Some("onion-server"), Some(v)) => {
+            if matches!(v, "off" | "none" | "") {
+                cfg.official_onion_server.clear();
+            } else {
+                config::validate_onion_url(v)?;
+                cfg.official_onion_server = v.to_string();
+            }
+            cfg.save()?;
+            if json {
+                output::print(&serde_json::json!({
+                    "status": "ok",
+                    "key": "onion-server",
+                    "host": endpoint_host(cfg.effective_onion_server()),
+                }));
+            } else if cfg.effective_onion_server().is_empty() {
+                println!("No official onion endpoint is configured.");
+            } else {
+                println!(
+                    "Official onion endpoint set to: {}",
+                    endpoint_host(cfg.effective_onion_server())
+                );
             }
         }
         (Some("token"), Some(v)) => {
@@ -74,7 +101,7 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
         }
         (Some(k), _) => {
             return Err(format!(
-                "unknown config key: {k} (valid: server, token, base-rpc, tor, tor-ephemeral)"
+                "unknown config key: {k} (valid: server, onion-server, token, base-rpc, tor, tor-ephemeral)"
             ));
         }
         (None, _) if json => {
@@ -82,6 +109,8 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
             // read the config file, and printing it invites it into logs.
             output::print(&serde_json::json!({
                 "server": cfg.server,
+                "server_explicit": cfg.server_explicit,
+                "official_onion_host": endpoint_host(cfg.effective_onion_server()),
                 "auth_token_set": !cfg.auth_token.is_empty(),
                 "base_rpc_host": rpc_host(&cfg.base_rpc),
                 "tor": cfg.tor,
@@ -92,6 +121,10 @@ pub fn run(key: Option<&str>, value: Option<&str>, json: bool) -> Result<(), Str
         }
         (None, _) => {
             println!("Server:        {}", cfg.server);
+            println!(
+                "Onion:         {}",
+                endpoint_host(cfg.effective_onion_server())
+            );
             if cfg.auth_token.len() > 10 {
                 println!(
                     "Auth Token:    {}...{}",
@@ -133,6 +166,13 @@ fn rpc_host(value: &str) -> String {
         .ok()
         .and_then(|url| url.host_str().map(str::to_string))
         .unwrap_or_else(|| "(invalid)".into())
+}
+
+fn endpoint_host(value: &str) -> String {
+    if value.is_empty() {
+        return "(not configured)".into();
+    }
+    rpc_host(value)
 }
 
 #[cfg(test)]
