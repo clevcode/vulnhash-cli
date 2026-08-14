@@ -246,10 +246,10 @@ identity changes the address and requires a new signed release.
 3. **Retain:** a successful submission is considered synchronized only after
    its versioned private receipt has been validated against `PROOF.md` and
    durably stored. If receipt storage fails, the CLI tells you how to recover it.
-4. **Anchor:** VulnHash targets sealing the oldest pending submission within one
-   hour, anchors the batch root on Base, waits for confirmations, and publishes
-   every ordered certified hash in a commit-pinned GitHub manifest. Delays and
-   retries can extend completion beyond one hour.
+4. **Anchor:** At the top of each UTC hour, VulnHash seals pending submissions
+   from the preceding hour, anchors the batch root on Base, waits for
+   confirmations, and publishes every ordered certified hash in a commit-pinned
+   GitHub manifest.
 5. **Verify:** the CLI recomputes the report hash and receipt commitment,
    reconstructs the batch root, validates the manifest, and optionally checks
    the transaction, receipt, calldata, event, confirmations, and contract state
