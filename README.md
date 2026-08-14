@@ -1,9 +1,16 @@
 # vulnhash
 
-Cryptographic proof-of-discovery for vulnerability research.
+Portable timeline evidence for vulnerability disclosures.
 
-Submit a SHA-256 hash of your vulnerability finding the moment you discover it. Later, reveal
-your proof document to demonstrate you were the first to find it.
+Hash exact report bytes locally, submit only the hash, and retain the private
+receipt returned by VulnHash. After the certified commitment enters a public
+batch, the CLI can reconstruct its Merkle inclusion and independently check the
+Base-mainnet anchor.
+
+The evidence shows that a commitment existed no later than its Base transaction.
+The earlier submission time is a VulnHash server assertion committed on chain
+later. It does not prove authorship, independent discovery, earliest discovery,
+technical validity, scope, or bounty eligibility.
 
 ## Install
 
@@ -31,17 +38,17 @@ On Windows:
 irm https://vulnhash.com/install.ps1 | iex
 ```
 
-Or build from source:
+When the source release gate is complete, a checkout builds with:
 
 ```bash
-git clone https://github.com/vulnhash/cli.git
-cd cli
 make build
 ```
 
-A Rust toolchain is the only requirement. The local web UI ships prebuilt in
-`web/dist/` and is embedded from there, so no Node, npm or network access is
-involved in a build.
+A Rust toolchain is the only normal build requirement. The local web UI ships
+prebuilt in `web/dist/` and is embedded from there, so no Node, npm, or network
+access is involved in an ordinary build. Do not advertise a public clone URL
+until the repository and license have been made accessible to unauthenticated
+users and checked from a clean machine.
 
 Changing the UI is the one thing that needs a bundler. `build.rs` compares
 `web/dist/sources.sha256` against `web/src`, and when they differ it says so
@@ -56,6 +63,9 @@ vulnhash config token vh_your_token_here
 
 # Submit a hash from a proof document
 vulnhash submit ./my-finding.md
+
+# Submission stores receipt.json beside the unchanged report. Export a copy
+vulnhash receipt 1 --output ./my-finding.receipt.json
 
 # Pipe directly from your fuzzer
 my-fuzzer --crash-report | vulnhash submit -
@@ -79,12 +89,11 @@ vulnhash publish 3
 # Publish a finding together with every follow-up below it
 vulnhash publish 3 -R
 
-# Disclose a sealed finding to one researcher, privately (e.g. a vendor in a
-# dispute) without publishing it
-vulnhash disclose 3 --to acmecorp
+# Verify the local report and receipt, public manifest, and live Base state
+vulnhash verify 1
 
-# Verify a hash exists
-vulnhash verify <hash>
+# Verify without VulnHash, GitHub, an RPC provider, or any other network access
+vulnhash verify 1 --manifest ./batch.json --offline
 
 # Browse findings in a local web UI
 vulnhash server --port 9090
@@ -164,7 +173,8 @@ safe to log.
 
 ## Tor
 
-Any command that talks to the server can be routed through Tor:
+Any command that talks to VulnHash, GitHub, or a Base RPC provider can use the
+same embedded Arti client:
 
 ```bash
 vulnhash submit ./my-finding.md --tor
@@ -178,8 +188,25 @@ vulnhash config tor-ephemeral on  # keep no Tor state on disk
 vulnhash config                   # show current settings
 ```
 
-`--tor` and `--no-tor` override the configured setting for a single command,
-in either direction:
+By default, Tor mode selects the official onion origin compiled into the signed
+release. If the build has no official onion address, it fails closed. It does
+not silently contact `vulnhash.com` through an exit. An operator or development
+build can set the exact v3 address explicitly:
+
+```bash
+vulnhash config onion-server http://<56-character-address>.onion
+```
+
+To deliberately use the clearnet service through a Tor exit instead, explicitly
+select its HTTPS URL:
+
+```bash
+vulnhash config server https://vulnhash.com
+```
+
+`--tor` and `--no-tor` override the configured setting for one command, in
+either direction. Each network command reports `direct`, `tor-onion`, or
+`tor-exit` and the destination host on stderr:
 
 | config | flag | result |
 | --- | --- | --- |
@@ -191,12 +218,65 @@ in either direction:
 Passing both is not an error: the last one on the command line wins, so a
 wrapper script can append `--no-tor` without knowing what it overrides.
 
+Tor mode also routes GitHub manifest retrieval and live Base verification. An
+HTTPS Base RPC endpoint is reached through a Tor exit unless that provider has
+an onion origin. The built-in `https://mainnet.base.org` endpoint is Base's
+[rate-limited public endpoint](https://docs.base.org/base-chain/api-reference/rpc-overview);
+configure a suitable read-only provider for reliable production verification.
+The VulnHash bearer token is never forwarded to GitHub or the RPC host.
+
+Official releases must be built only after the production onion identity has
+been initialised and backed up:
+
+```bash
+VULNHASH_OFFICIAL_ONION_SERVER=http://<production-address>.onion \
+  cargo build --release
+```
+
+Do not generate a substitute identity on a build machine. Losing the production
+identity changes the address and requires a new signed release.
+
 ## How It Works
 
-1. **Hash**: Your proof document (markdown with crash reports, PoC code, writeups) is SHA-256 hashed
-2. **Submit**: The hash is submitted to vulnhash.com with a timestamp
-3. **Store**: The original document is saved locally in `~/.vulnhash/<hash>/PROOF.md`
-4. **Prove**: When ready, publish your proof - we verify it matches the original hash
+1. **Hash locally:** the CLI hashes the exact input bytes with SHA-256 and saves
+   them as `PROOF.md`.
+2. **Submit:** VulnHash receives the document hash, assigns a private UUID and
+   server time, and binds those with the account ID and username into a
+   certified hash.
+3. **Retain:** a successful submission is considered synchronized only after
+   its versioned private receipt has been validated against `PROOF.md` and
+   durably stored. If receipt storage fails, the CLI tells you how to recover it.
+4. **Anchor:** VulnHash targets sealing the oldest pending submission within one
+   hour, anchors the batch root on Base, waits for confirmations, and publishes
+   every ordered certified hash in a commit-pinned GitHub manifest. Delays and
+   retries can extend completion beyond one hour.
+5. **Verify:** the CLI recomputes the report hash and receipt commitment,
+   reconstructs the batch root, validates the manifest, and optionally checks
+   the transaction, receipt, calldata, event, confirmations, and contract state
+   against Base.
+
+## Receipts and Verification
+
+`receipt.json` contains the private preimage of the certified hash: the report
+hash, submission UUID, server timestamp, account ID, and username. The UUID is a
+salt, so keep the receipt private while the report is sealed. Keep the receipt
+and exact report bytes together; neither a public Merkle root nor the report by
+itself is enough to recover the complete evidence chain.
+
+`vulnhash verify` has distinct modes:
+
+| Inputs | Result |
+| --- | --- |
+| No local receipt | Looks up the server record and says independent evidence was not checked |
+| Local report + receipt | Fetches the API locator and commit-pinned manifest, validates inclusion, then checks live Base state |
+| `--manifest FILE` | Uses that local manifest instead of GitHub, then checks live Base state |
+| `--manifest FILE --offline` | Makes no network requests; validates report, receipt, manifest, Merkle root, and embedded chain metadata without querying current Base state |
+
+The first successful online verification caches the public manifest as
+`anchor-batch.json`, so it can be retained or mirrored independently. A raw
+GitHub URL returned by the API is only a convenience locator; verification
+checks the commit pin, schema, ordered leaves, root, chain identity, and anchor
+metadata.
 
 ## Local Storage
 
@@ -209,6 +289,8 @@ set:
   .ids/                    # Local id ledger, one marker file per id
   <hash>/
     PROOF.md               # Original proof document
+    receipt.json           # Private portable receipt (restrictive permissions)
+    anchor-batch.json      # Cached public complete batch manifest
     meta.json              # Metadata (timestamps, status, parent)
     notes/                 # Additional notes
       2024-01-15_143022.md
@@ -253,7 +335,8 @@ payload = b'A' * 256 + struct.pack('<Q', 0xdeadbeef)
 
 ## Building
 
-Requires Go 1.25+ and Node.js 22+.
+Requires a current Rust toolchain. Node.js is needed only to regenerate the
+local web UI when `web/src` changes; ordinary builds embed the committed bundle.
 
 ```bash
 # Build for current platform
@@ -266,13 +349,12 @@ make build-all
 make clean
 ```
 
-### Reproducible Builds
+### Release builds
 
-Releases are built with [GoReleaser](https://goreleaser.com/) and include:
-- SBOM (SPDX format via Syft)
-- SHA-256 checksums
-- Statically linked binaries (CGO_ENABLED=0)
-- Trimmed build paths (`-trimpath`)
+The release workflow builds Linux, macOS, and Windows artifacts for x86-64 and
+ARM64, then generates SHA-256 checksums. Installer signature claims must be
+checked against the actual staged release and public key before publication;
+workflow completion alone is not proof that the deployed files were signed.
 
 ## License
 

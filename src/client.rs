@@ -152,12 +152,10 @@ impl Client {
         Ok(())
     }
 
-    /// Disclose a sealed finding to one researcher, privately.
+    /// Invoke the legacy server-readable disclosure endpoint.
     ///
-    /// The report travels with the grant: the server has no copy of a sealed
-    /// document until it is published or disclosed, and verifies what arrives
-    /// against the registered hash. Naming the finding by its raw hash is fine
-    /// here — the server resolves the caller's own document.
+    /// Public-beta servers reject this write. The method remains for old
+    /// self-hosted instances and must not be described as end-to-end encrypted.
     pub async fn disclose(&self, hash: &str, username: &str, content: &str) -> Result<(), String> {
         let body = serde_json::json!({"username": username, "content": content});
         self.do_request("POST", &format!("/api/hashes/{hash}/disclose"), Some(&body))

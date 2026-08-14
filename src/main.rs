@@ -12,7 +12,7 @@ use clap::{Args, Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "vulnhash",
-    about = "Cryptographic proof-of-discovery for vulnerability research"
+    about = "Portable timeline evidence for vulnerability disclosures"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -84,7 +84,7 @@ enum Commands {
         #[command(flatten)]
         tor: TorArgs,
     },
-    /// Verify a hash exists on the server
+    /// Verify a local receipt, public batch and optional live Base state
     Verify {
         /// Local id, hash prefix or full hash
         reference: String,
@@ -113,7 +113,8 @@ enum Commands {
         #[command(flatten)]
         tor: TorArgs,
     },
-    /// Disclose a sealed finding to one researcher, privately
+    /// Legacy server-readable disclosure (disabled by the public beta)
+    #[command(hide = true)]
     Disclose {
         /// Local id, hash prefix or full hash
         reference: String,

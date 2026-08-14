@@ -2,20 +2,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{client::Client, config, output, store};
 
-/// Show one researcher a sealed finding, privately, without publishing it.
+/// Use the legacy server-readable recipient disclosure path.
 ///
-/// This is how a dispute is settled: not by argument, but by letting the other
-/// party read what you found. The report is uploaded with the grant and
-/// verified against the registered hash, so the recipient sees exactly what
-/// was timestamped — and only that recipient. It does not make the finding
-/// public, and it cannot be truly undone: revoking stops further access, but
-/// what has been read has been read.
-pub fn run(
-    reference: &str,
-    to: &str,
-    tor: Option<bool>,
-    json: bool,
-) -> Result<(), String> {
+/// This exists for compatibility with old self-hosted servers. The public beta
+/// rejects the request because the report would be uploaded to and readable by
+/// the server. It is not end-to-end encrypted.
+pub fn run(reference: &str, to: &str, tor: Option<bool>, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
     let entry = store::get_entry(&hash)?;
 
