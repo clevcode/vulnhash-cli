@@ -27,7 +27,19 @@ pub fn run(reference: &str, json: bool) -> Result<(), String> {
     println!("ID:          {}", entry.local_id);
     println!("Hash:        {}", entry.hash);
     println!("Algorithm:   {}", entry.algorithm);
-    println!("Submitted:   {}", entry.submitted_at.format("%Y-%m-%d %H:%M:%S UTC"));
+    println!(
+        "Saved local: {}",
+        entry.submitted_at.format("%Y-%m-%d %H:%M:%S UTC")
+    );
+    if let Some(server_time) = entry.server_submitted_at {
+        println!(
+            "Server time: {}",
+            server_time.format("%Y-%m-%d %H:%M:%S UTC")
+        );
+    }
+    if !entry.certified_hash.is_empty() {
+        println!("Certified:  {}", entry.certified_hash);
+    }
     println!("Published:   {}", entry.published);
     println!("Synced:      {}", entry.synced);
     if !entry.title.is_empty() {

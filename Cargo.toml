@@ -25,6 +25,7 @@ serde_json = "1"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
+uuid = "1"
 
 # Web UI server
 axum = "0.8"

@@ -7,7 +7,7 @@
 //! the two apart is what lets each move without breaking the other.
 
 use chrono::SecondsFormat;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::store::Entry;
 
@@ -22,6 +22,10 @@ pub fn entry(e: &Entry, parent_id: Option<u64>) -> Value {
         "hash": e.hash,
         "algorithm": e.algorithm,
         "submitted_at": e.submitted_at.to_rfc3339_opts(SecondsFormat::Secs, true),
+        "server_submitted_at": e.server_submitted_at
+            .map(|t| Value::String(t.to_rfc3339_opts(SecondsFormat::Secs, true)))
+            .unwrap_or(Value::Null),
+        "certified_hash": string_or_null(&e.certified_hash),
         "published": e.published,
         "synced": e.synced,
         "parent": string_or_null(&e.parent),
@@ -36,10 +40,7 @@ pub fn entries(all: &[Entry]) -> Value {
     Value::Array(
         all.iter()
             .map(|e| {
-                let parent_id = all
-                    .iter()
-                    .find(|p| p.hash == e.parent)
-                    .map(|p| p.local_id);
+                let parent_id = all.iter().find(|p| p.hash == e.parent).map(|p| p.local_id);
                 entry(e, parent_id)
             })
             .collect(),
@@ -47,11 +48,7 @@ pub fn entries(all: &[Entry]) -> Value {
 }
 
 pub fn string_or_null(s: &str) -> Value {
-    if s.is_empty() {
-        Value::Null
-    } else {
-        json!(s)
-    }
+    if s.is_empty() { Value::Null } else { json!(s) }
 }
 
 /// Print a value as a single JSON document.
@@ -85,6 +82,8 @@ mod tests {
             local_id: id,
             algorithm: "sha256".into(),
             submitted_at: Utc.with_ymd_and_hms(2026, 3, 13, 0, 40, 26).unwrap(),
+            server_submitted_at: None,
+            certified_hash: String::new(),
             parent: parent.to_string(),
             title: String::new(),
             description: String::new(),
@@ -104,6 +103,8 @@ mod tests {
             "hash",
             "algorithm",
             "submitted_at",
+            "server_submitted_at",
+            "certified_hash",
             "published",
             "synced",
             "parent",
@@ -126,7 +127,10 @@ mod tests {
 
     #[test]
     fn a_parent_is_reported_by_hash_and_by_local_id() {
-        let all = vec![sample("parent-hash", 1, ""), sample("child-hash", 2, "parent-hash")];
+        let all = vec![
+            sample("parent-hash", 1, ""),
+            sample("child-hash", 2, "parent-hash"),
+        ];
         let value = entries(&all);
         assert_eq!(value[0]["parent"], Value::Null);
         assert_eq!(value[1]["parent"], "parent-hash");

@@ -1,5 +1,5 @@
+use crate::{config::Config, receipt::SubmissionReceipt};
 use serde::Deserialize;
-use crate::config::Config;
 
 /// The parts of a submission the CLI has a use for.
 ///
@@ -9,9 +9,19 @@ use crate::config::Config;
 /// full record.
 #[derive(Debug, Deserialize)]
 pub struct HashResponse {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
     pub hash: String,
+    #[serde(default)]
+    pub algorithm: Option<String>,
     pub published: bool,
     pub submitted_at: String,
+    #[serde(default)]
+    pub certified_hash: Option<String>,
+    #[serde(default)]
+    pub receipt: Option<SubmissionReceipt>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -98,7 +108,8 @@ impl Client {
         description: &str,
     ) -> Result<(), String> {
         let body = serde_json::json!({"title": title, "description": description});
-        self.do_request("PUT", &format!("/api/hashes/{hash}"), Some(&body)).await?;
+        self.do_request("PUT", &format!("/api/hashes/{hash}"), Some(&body))
+            .await?;
         Ok(())
     }
 
@@ -110,13 +121,15 @@ impl Client {
     /// here — the server resolves the caller's own document.
     pub async fn disclose(&self, hash: &str, username: &str, content: &str) -> Result<(), String> {
         let body = serde_json::json!({"username": username, "content": content});
-        self.do_request("POST", &format!("/api/hashes/{hash}/disclose"), Some(&body)).await?;
+        self.do_request("POST", &format!("/api/hashes/{hash}/disclose"), Some(&body))
+            .await?;
         Ok(())
     }
 
     pub async fn publish_hash(&self, hash: &str, content: &str) -> Result<(), String> {
         let body = serde_json::json!({"content": content});
-        self.do_request("POST", &format!("/api/hashes/{hash}/publish"), Some(&body)).await?;
+        self.do_request("POST", &format!("/api/hashes/{hash}/publish"), Some(&body))
+            .await?;
         Ok(())
     }
 
@@ -132,13 +145,34 @@ impl Client {
         serde_json::from_str(&body).map_err(|e| format!("parse response: {e}"))
     }
 
-    async fn do_request(&self, method: &str, path: &str, body: Option<&serde_json::Value>) -> Result<String, String> {
+    /// Re-fetch a private receipt by its certified hash. The caller validates
+    /// it before storing any bytes or marking the submission synchronized.
+    pub async fn receipt(&self, certified_hash: &str) -> Result<String, String> {
+        self.do_request(
+            "GET",
+            &format!("/api/hashes/{certified_hash}/receipt"),
+            None,
+        )
+        .await
+    }
+
+    async fn do_request(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<String, String> {
         let (status, body) = self.request_raw(method, path, body).await?;
         check_status(status, &body)?;
         Ok(body)
     }
 
-    async fn request_raw(&self, method: &str, path: &str, body: Option<&serde_json::Value>) -> Result<(u16, String), String> {
+    async fn request_raw(
+        &self,
+        method: &str,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> Result<(u16, String), String> {
         let url = format!("{}{}", self.base_url, path);
         let body_bytes = body.map(|b| serde_json::to_vec(b).unwrap());
 
@@ -149,7 +183,8 @@ impl Client {
                 body_bytes.as_deref(),
                 "application/json",
                 Some(&self.auth_token),
-            ).await?
+            )
+            .await?
         } else {
             vulnhash_crypto::http::http_request(
                 method,
@@ -157,7 +192,8 @@ impl Client {
                 body_bytes.as_deref(),
                 "application/json",
                 Some(&self.auth_token),
-            ).await?
+            )
+            .await?
         };
 
         Ok((resp.status, resp.body))

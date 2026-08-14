@@ -1,8 +1,13 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::config;
+use crate::{
+    config,
+    receipt::{self, SubmissionReceipt},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Entry {
@@ -13,7 +18,13 @@ pub struct Entry {
     #[serde(default)]
     pub local_id: u64,
     pub algorithm: String,
+    /// When these bytes were saved locally. This predates server receipts and
+    /// remains separate from the server-recorded time committed on chain.
     pub submitted_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_submitted_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub certified_hash: String,
     /// Hash of the submission this one follows up on, if any.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub parent: String,
@@ -27,6 +38,10 @@ pub struct Entry {
 
 fn hash_dir(hash: &str) -> PathBuf {
     config::dir().join(hash)
+}
+
+pub fn receipt_path(hash: &str) -> PathBuf {
+    hash_dir(hash).join("receipt.json")
 }
 
 /// Directory holding one marker file per allocated local id.
@@ -63,6 +78,8 @@ pub fn save(hash: &str, proof: &[u8], parent: &str) -> Result<Entry, String> {
         local_id: allocate_local_id(hash)?,
         algorithm: "sha256".to_string(),
         submitted_at: Utc::now(),
+        server_submitted_at: None,
+        certified_hash: String::new(),
         parent: parent.to_string(),
         title: String::new(),
         description: String::new(),
@@ -89,8 +106,56 @@ pub fn update_entry(hash: &str, f: impl FnOnce(&mut Entry)) -> Result<(), String
 
 /// Get the proof document bytes.
 pub fn get_proof(hash: &str) -> Result<Vec<u8>, String> {
-    std::fs::read(hash_dir(hash).join("PROOF.md"))
-        .map_err(|e| format!("read proof: {e}"))
+    std::fs::read(hash_dir(hash).join("PROOF.md")).map_err(|e| format!("read proof: {e}"))
+}
+
+/// Validate and durably retain the private receipt beside its exact report.
+pub fn save_receipt(hash: &str, submission_receipt: &SubmissionReceipt) -> Result<(), String> {
+    if submission_receipt.document_hash != hash {
+        return Err(format!(
+            "receipt document hash {} does not match local hash {hash}",
+            submission_receipt.document_hash
+        ));
+    }
+    let proof = get_proof(hash)?;
+    submission_receipt.validate_report(&proof)?;
+    let data = submission_receipt.to_json()?;
+    atomic_create_private(&receipt_path(hash), &data)
+}
+
+/// Read and validate a retained receipt, including its binding to PROOF.md.
+pub fn get_receipt(hash: &str) -> Result<SubmissionReceipt, String> {
+    let data = std::fs::read(receipt_path(hash)).map_err(|e| format!("read receipt: {e}"))?;
+    let submission_receipt = receipt::parse(&data)?;
+    if submission_receipt.document_hash != hash {
+        return Err(format!(
+            "receipt document hash {} does not match local hash {hash}",
+            submission_receipt.document_hash
+        ));
+    }
+    submission_receipt.validate_report(&get_proof(hash)?)?;
+    Ok(submission_receipt)
+}
+
+/// Return the original receipt bytes after validating them. This is used for
+/// export so unknown fields and the producer's formatting are not discarded.
+pub fn receipt_bytes(hash: &str) -> Result<Vec<u8>, String> {
+    let path = receipt_path(hash);
+    let data = std::fs::read(&path).map_err(|e| format!("read receipt: {e}"))?;
+    let submission_receipt = receipt::parse(&data)?;
+    if submission_receipt.document_hash != hash {
+        return Err(format!(
+            "receipt document hash {} does not match local hash {hash}",
+            submission_receipt.document_hash
+        ));
+    }
+    submission_receipt.validate_report(&get_proof(hash)?)?;
+    Ok(data)
+}
+
+/// Export already-validated receipt bytes without silently replacing a file.
+pub fn export_receipt(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
+    atomic_create_private(path, data)
 }
 
 /// List all locally stored entries, sorted by submitted_at descending.
@@ -164,7 +229,9 @@ pub fn resolve(reference: &str) -> Result<String, String> {
     match matches.len() {
         0 => Err(format!("no local submission matches {reference}")),
         1 => Ok(matches.into_iter().next().unwrap()),
-        n => Err(format!("{reference} matches {n} submissions; use more characters")),
+        n => Err(format!(
+            "{reference} matches {n} submissions; use more characters"
+        )),
     }
 }
 
@@ -172,11 +239,7 @@ pub fn resolve(reference: &str) -> Result<String, String> {
 pub fn hash_for_local_id(id: u64) -> Option<String> {
     let hash = std::fs::read_to_string(ids_dir().join(id.to_string())).ok()?;
     let hash = hash.trim().to_string();
-    if hash.is_empty() {
-        None
-    } else {
-        Some(hash)
-    }
+    if hash.is_empty() { None } else { Some(hash) }
 }
 
 /// Local submissions descending from `hash`, parents before their children.
@@ -283,6 +346,87 @@ fn save_meta(path: &std::path::Path, entry: &Entry) -> Result<(), String> {
     std::fs::write(path, data).map_err(|e| format!("write meta: {e}"))
 }
 
+/// Create a file in its final directory, sync its contents, and publish it by
+/// rename. Receipts are immutable; an existing valid byte-for-byte receipt is
+/// success, while different bytes are never silently overwritten.
+fn atomic_create_private(path: &std::path::Path, data: &[u8]) -> Result<(), String> {
+    if path.exists() {
+        let existing = std::fs::read(path).map_err(|e| format!("read existing receipt: {e}"))?;
+        if existing == data {
+            set_private_permissions(path)?;
+            return Ok(());
+        }
+        return Err("a different receipt already exists; refusing to overwrite it".into());
+    }
+
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("receipt.json");
+    let temp = path.with_file_name(format!(
+        ".{name}.tmp-{}-{}",
+        std::process::id(),
+        NEXT_TEMP.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+
+    let result = (|| {
+        let mut file = options
+            .open(&temp)
+            .map_err(|e| format!("create receipt temp file: {e}"))?;
+        file.write_all(data)
+            .map_err(|e| format!("write receipt: {e}"))?;
+        file.sync_all().map_err(|e| format!("sync receipt: {e}"))?;
+        drop(file);
+        std::fs::hard_link(&temp, path).map_err(|e| format!("publish receipt: {e}"))?;
+        std::fs::remove_file(&temp).map_err(|e| format!("remove receipt temp link: {e}"))?;
+        set_private_permissions(path)?;
+        sync_parent(path)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn set_private_permissions(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+        .map_err(|e| format!("set receipt permissions: {e}"))
+}
+
+#[cfg(not(unix))]
+fn set_private_permissions(_path: &std::path::Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_parent(path: &std::path::Path) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::File::open(parent)
+        .and_then(|file| file.sync_all())
+        .map_err(|e| format!("sync receipt directory: {e}"))
+}
+
+#[cfg(not(unix))]
+fn sync_parent(_path: &std::path::Path) -> Result<(), String> {
+    Ok(())
+}
+
 fn is_hex(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_hexdigit())
 }
@@ -290,6 +434,7 @@ fn is_hex(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sha2::{Digest, Sha256};
     use std::sync::atomic::{AtomicU32, Ordering};
 
     /// A store of this test's own, in a directory nothing else touches.
@@ -307,9 +452,35 @@ mod tests {
     }
 
     fn submit(content: &str, parent: &str) -> Entry {
-        use sha2::{Digest, Sha256};
         let hash = hex::encode(Sha256::digest(content.as_bytes()));
         save(&hash, content.as_bytes(), parent).unwrap()
+    }
+
+    fn sample_receipt(document_hash: &str) -> SubmissionReceipt {
+        let submission_id = "11111111-1111-4111-8111-111111111111";
+        let user_id = "22222222-2222-4222-8222-222222222222";
+        let submitted_at_unix = 1_786_710_896;
+        let username = "researcher";
+        SubmissionReceipt {
+            schema: receipt::SCHEMA.into(),
+            certified_hash_version: receipt::CERTIFIED_HASH_VERSION.into(),
+            certified_hash_format: receipt::CERTIFIED_HASH_FORMAT.into(),
+            submission_id: submission_id.into(),
+            digest_algorithm: receipt::DIGEST_ALGORITHM.into(),
+            document_hash: document_hash.into(),
+            submitted_at: "2026-08-14T12:34:56Z".into(),
+            submitted_at_unix,
+            user_id: user_id.into(),
+            username: username.into(),
+            certified_hash: receipt::certified_hash(
+                submission_id,
+                document_hash,
+                submitted_at_unix,
+                user_id,
+                username,
+            ),
+            extra: Default::default(),
+        }
     }
 
     #[test]
@@ -354,6 +525,40 @@ mod tests {
     }
 
     #[test]
+    fn receipt_is_checked_against_the_saved_proof() {
+        let root = temp_store();
+        let entry = submit("report", "");
+        let valid = sample_receipt(&entry.hash);
+        save_receipt(&entry.hash, &valid).unwrap();
+        assert_eq!(
+            get_receipt(&entry.hash).unwrap().certified_hash,
+            valid.certified_hash
+        );
+
+        let mut wrong = sample_receipt(&hex::encode(Sha256::digest(b"different")));
+        wrong.extra.insert("future".into(), serde_json::json!(true));
+        let err = save_receipt(&entry.hash, &wrong).unwrap_err();
+        assert!(err.contains("does not match local hash"), "{err}");
+        assert!(root.join(&entry.hash).join("receipt.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn receipt_permissions_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = temp_store();
+        let entry = submit("report", "");
+        save_receipt(&entry.hash, &sample_receipt(&entry.hash)).unwrap();
+        let mode = std::fs::metadata(root.join(entry.hash).join("receipt.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[test]
     fn resolve_accepts_an_id_a_prefix_or_a_full_hash() {
         temp_store();
         let entry = submit("a", "");
@@ -380,7 +585,10 @@ mod tests {
         let mut shared = Vec::new();
         for i in 0..64 {
             let e = submit(&format!("doc-{i}"), "");
-            if let Some(other) = shared.iter().find(|h: &&String| h.starts_with(&e.hash[..1])) {
+            if let Some(other) = shared
+                .iter()
+                .find(|h: &&String| h.starts_with(&e.hash[..1]))
+            {
                 let err = resolve(&e.hash[..1]).unwrap_err();
                 assert!(err.contains("more characters"), "{err} (vs {other})");
                 return;
@@ -431,7 +639,10 @@ mod tests {
         let old = submit("old", "");
         let new = submit("new", "");
 
-        for (hash, ts) in [(&old.hash, "2020-01-01T00:00:00Z"), (&new.hash, "2021-01-01T00:00:00Z")] {
+        for (hash, ts) in [
+            (&old.hash, "2020-01-01T00:00:00Z"),
+            (&new.hash, "2021-01-01T00:00:00Z"),
+        ] {
             let meta = root.join(hash).join("meta.json");
             let mut value: serde_json::Value =
                 serde_json::from_str(&std::fs::read_to_string(&meta).unwrap()).unwrap();

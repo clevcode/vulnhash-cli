@@ -1,13 +1,17 @@
-mod config;
-mod store;
 mod client;
 mod commands;
+mod config;
 mod output;
+mod receipt;
+mod store;
 
 use clap::{Args, Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "vulnhash", about = "Cryptographic proof-of-discovery for vulnerability research")]
+#[command(
+    name = "vulnhash",
+    about = "Cryptographic proof-of-discovery for vulnerability research"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -85,6 +89,19 @@ enum Commands {
         #[command(flatten)]
         tor: TorArgs,
     },
+    /// Export or recover the private portable receipt for a submission
+    Receipt {
+        /// Local id, hash prefix or full document hash
+        reference: String,
+        /// Write to this new file instead of stdout; "-" also means stdout
+        #[arg(long, short = 'o', value_name = "FILE")]
+        output: Option<String>,
+        /// Re-fetch the owner-only receipt even when a local copy exists
+        #[arg(long)]
+        refresh: bool,
+        #[command(flatten)]
+        tor: TorArgs,
+    },
     /// Disclose a sealed finding to one researcher, privately
     Disclose {
         /// Local id, hash prefix or full hash
@@ -138,19 +155,37 @@ fn main() {
 
     let json = cli.json;
     let result = match cli.command {
-        Commands::Submit { file, parent, tor, tor_ephemeral } => {
-            commands::submit::run(&file, parent.as_deref(), tor.choice(), tor_ephemeral, json)
-        }
+        Commands::Submit {
+            file,
+            parent,
+            tor,
+            tor_ephemeral,
+        } => commands::submit::run(&file, parent.as_deref(), tor.choice(), tor_ephemeral, json),
         Commands::List => commands::list::run(json),
         Commands::Show { reference } => commands::show::run(&reference, json),
-        Commands::Publish { reference, recursive, tor } => {
-            commands::publish::run(&reference, recursive, tor.choice(), json)
+        Commands::Publish {
+            reference,
+            recursive,
+            tor,
+        } => commands::publish::run(&reference, recursive, tor.choice(), json),
+        Commands::Verify { reference, tor } => {
+            commands::verify::run(&reference, tor.choice(), json)
         }
-        Commands::Verify { reference, tor } => commands::verify::run(&reference, tor.choice(), json),
+        Commands::Receipt {
+            reference,
+            output,
+            refresh,
+            tor,
+        } => commands::receipt::run(&reference, output.as_deref(), refresh, tor.choice(), json),
         Commands::Disclose { reference, to, tor } => {
             commands::disclose::run(&reference, &to, tor.choice(), json)
         }
-        Commands::Details { reference, title, description, tor } => commands::details::run(
+        Commands::Details {
+            reference,
+            title,
+            description,
+            tor,
+        } => commands::details::run(
             &reference,
             title.as_deref(),
             description.as_deref(),
@@ -222,8 +257,14 @@ mod tests {
 
     #[test]
     fn each_flag_forces_its_direction() {
-        assert_eq!(tor_choice(&["vulnhash", "verify", "abc", "--tor"]), Some(true));
-        assert_eq!(tor_choice(&["vulnhash", "verify", "abc", "--no-tor"]), Some(false));
+        assert_eq!(
+            tor_choice(&["vulnhash", "verify", "abc", "--tor"]),
+            Some(true)
+        );
+        assert_eq!(
+            tor_choice(&["vulnhash", "verify", "abc", "--no-tor"]),
+            Some(false)
+        );
     }
 
     // Overriding rather than conflicting lets a wrapper append --no-tor without
@@ -285,6 +326,34 @@ mod tests {
         match Cli::parse_from(["vulnhash", "submit", "f.md"]).command {
             Commands::Submit { parent, .. } => assert_eq!(parent, None),
             _ => panic!("expected a submit command"),
+        }
+    }
+
+    #[test]
+    fn receipt_can_be_refetched_and_exported() {
+        match Cli::parse_from([
+            "vulnhash",
+            "receipt",
+            "3",
+            "--refresh",
+            "--output",
+            "receipt.json",
+            "--tor",
+        ])
+        .command
+        {
+            Commands::Receipt {
+                reference,
+                output,
+                refresh,
+                tor,
+            } => {
+                assert_eq!(reference, "3");
+                assert_eq!(output.as_deref(), Some("receipt.json"));
+                assert!(refresh);
+                assert_eq!(tor.choice(), Some(true));
+            }
+            _ => panic!("expected a receipt command"),
         }
     }
 
