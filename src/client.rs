@@ -256,7 +256,7 @@ impl Client {
         let resp = if let Some(tor) = &self.tor {
             tor.http_request(
                 method,
-                &url,
+                url,
                 body_bytes.as_deref(),
                 "application/json",
                 auth_token,
@@ -265,7 +265,7 @@ impl Client {
         } else {
             vulnhash_crypto::http::http_request(
                 method,
-                &url,
+                url,
                 body_bytes.as_deref(),
                 "application/json",
                 auth_token,
@@ -294,10 +294,10 @@ fn check_status(status: u16, body: &str) -> Result<(), String> {
     struct ErrResp {
         error: Option<String>,
     }
-    if let Ok(e) = serde_json::from_str::<ErrResp>(body) {
-        if let Some(msg) = e.error {
-            return Err(format!("server error ({status}): {msg}"));
-        }
+    if let Ok(e) = serde_json::from_str::<ErrResp>(body)
+        && let Some(msg) = e.error
+    {
+        return Err(format!("server error ({status}): {msg}"));
     }
     Err(format!("server error ({status}): {body}"))
 }

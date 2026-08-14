@@ -138,6 +138,78 @@ pub fn run(
     })
 }
 
+/// Record an accepted response as pending, then mark it synced only after its
+/// private receipt has been checked against the exact local report and synced
+/// to disk.
+fn retain_server_receipt(hash: &str, proof: &[u8], response: &HashResponse) -> Result<(), String> {
+    if response.hash != hash {
+        return Err(format!(
+            "server response describes document hash {}, expected {hash}",
+            response.hash
+        ));
+    }
+    if let Some(algorithm) = &response.algorithm
+        && algorithm != "sha256"
+    {
+        return Err(format!(
+            "server response uses unsupported algorithm {algorithm:?}"
+        ));
+    }
+
+    let server_time = DateTime::parse_from_rfc3339(&response.submitted_at)
+        .map_err(|e| format!("invalid server submission timestamp: {e}"))?
+        .with_timezone(&Utc);
+    let reported_certified_hash = response
+        .certified_hash
+        .as_deref()
+        .or_else(|| response.receipt.as_ref().map(|r| r.certified_hash.as_str()))
+        .unwrap_or("")
+        .to_string();
+    if !reported_certified_hash.is_empty() {
+        crate::receipt::validate_sha256(&reported_certified_hash)
+            .map_err(|e| format!("invalid certified hash in server response: {e}"))?;
+    }
+    store::update_entry(hash, |entry| {
+        entry.server_submitted_at = Some(server_time);
+        entry.certified_hash = reported_certified_hash;
+        entry.synced = false;
+    })?;
+
+    let receipt = response.receipt.as_ref().ok_or_else(|| {
+        "server response omitted the portable receipt; update the server or re-fetch it as the owner"
+            .to_string()
+    })?;
+    receipt.validate_report(proof)?;
+    if receipt.document_hash != response.hash {
+        return Err("receipt document hash differs from the server response".into());
+    }
+    if receipt.submitted_at != response.submitted_at {
+        return Err("receipt timestamp differs from the server response".into());
+    }
+    if let Some(id) = &response.id
+        && id != &receipt.submission_id
+    {
+        return Err("receipt submission id differs from the server response".into());
+    }
+    if let Some(user_id) = &response.user_id
+        && user_id != &receipt.user_id
+    {
+        return Err("receipt user id differs from the server response".into());
+    }
+    if let Some(certified_hash) = &response.certified_hash
+        && certified_hash != &receipt.certified_hash
+    {
+        return Err("receipt certified hash differs from the server response".into());
+    }
+
+    store::save_receipt(hash, receipt)?;
+    store::update_entry(hash, |entry| {
+        entry.server_submitted_at = Some(server_time);
+        entry.certified_hash = receipt.certified_hash.clone();
+        entry.synced = true;
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,76 +302,4 @@ mod tests {
         assert!(!store::get_entry(&hash).unwrap().synced);
         assert!(!store::receipt_path(&hash).exists());
     }
-}
-
-/// Record an accepted response as pending, then mark it synced only after its
-/// private receipt has been checked against the exact local report and synced
-/// to disk.
-fn retain_server_receipt(hash: &str, proof: &[u8], response: &HashResponse) -> Result<(), String> {
-    if response.hash != hash {
-        return Err(format!(
-            "server response describes document hash {}, expected {hash}",
-            response.hash
-        ));
-    }
-    if let Some(algorithm) = &response.algorithm {
-        if algorithm != "sha256" {
-            return Err(format!(
-                "server response uses unsupported algorithm {algorithm:?}"
-            ));
-        }
-    }
-
-    let server_time = DateTime::parse_from_rfc3339(&response.submitted_at)
-        .map_err(|e| format!("invalid server submission timestamp: {e}"))?
-        .with_timezone(&Utc);
-    let reported_certified_hash = response
-        .certified_hash
-        .as_deref()
-        .or_else(|| response.receipt.as_ref().map(|r| r.certified_hash.as_str()))
-        .unwrap_or("")
-        .to_string();
-    if !reported_certified_hash.is_empty() {
-        crate::receipt::validate_sha256(&reported_certified_hash)
-            .map_err(|e| format!("invalid certified hash in server response: {e}"))?;
-    }
-    store::update_entry(hash, |entry| {
-        entry.server_submitted_at = Some(server_time);
-        entry.certified_hash = reported_certified_hash;
-        entry.synced = false;
-    })?;
-
-    let receipt = response.receipt.as_ref().ok_or_else(|| {
-        "server response omitted the portable receipt; update the server or re-fetch it as the owner"
-            .to_string()
-    })?;
-    receipt.validate_report(proof)?;
-    if receipt.document_hash != response.hash {
-        return Err("receipt document hash differs from the server response".into());
-    }
-    if receipt.submitted_at != response.submitted_at {
-        return Err("receipt timestamp differs from the server response".into());
-    }
-    if let Some(id) = &response.id {
-        if id != &receipt.submission_id {
-            return Err("receipt submission id differs from the server response".into());
-        }
-    }
-    if let Some(user_id) = &response.user_id {
-        if user_id != &receipt.user_id {
-            return Err("receipt user id differs from the server response".into());
-        }
-    }
-    if let Some(certified_hash) = &response.certified_hash {
-        if certified_hash != &receipt.certified_hash {
-            return Err("receipt certified hash differs from the server response".into());
-        }
-    }
-
-    store::save_receipt(hash, receipt)?;
-    store::update_entry(hash, |entry| {
-        entry.server_submitted_at = Some(server_time);
-        entry.certified_hash = receipt.certified_hash.clone();
-        entry.synced = true;
-    })
 }

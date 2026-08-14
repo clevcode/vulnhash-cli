@@ -216,8 +216,10 @@ mod tests {
 
     #[test]
     fn tor_prefers_onion_unless_clearnet_exit_was_explicit() {
-        let mut cfg = Config::default();
-        cfg.official_onion_server = onion();
+        let mut cfg = Config {
+            official_onion_server: onion(),
+            ..Config::default()
+        };
         assert_eq!(cfg.tor_server().unwrap(), (onion(), TorRoute::Onion));
 
         cfg.server_explicit = true;
@@ -231,6 +233,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::const_is_empty)]
     fn tor_fails_closed_without_an_onion_or_explicit_exit() {
         let cfg = Config::default();
         if BUILT_IN_ONION_SERVER.is_empty() {

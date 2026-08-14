@@ -1,5 +1,5 @@
-use sha2::{Sha256, Digest};
-use crate::{config, client::Client, output, store};
+use crate::{client::Client, config, output, store};
+use sha2::{Digest, Sha256};
 
 /// One submission that is ready to be published.
 struct Ready {
@@ -35,9 +35,18 @@ pub fn run(reference: &str, recursive: bool, tor: Option<bool>, json: bool) -> R
                 short(&entry.hash)
             ));
         }
-        let content = String::from_utf8(proof)
-            .map_err(|e| format!("{} ({}): proof is not UTF-8: {e}", entry.local_id, short(&entry.hash)))?;
-        ready.push(Ready { hash: entry.hash.clone(), local_id: entry.local_id, content });
+        let content = String::from_utf8(proof).map_err(|e| {
+            format!(
+                "{} ({}): proof is not UTF-8: {e}",
+                entry.local_id,
+                short(&entry.hash)
+            )
+        })?;
+        ready.push(Ready {
+            hash: entry.hash.clone(),
+            local_id: entry.local_id,
+            content,
+        });
     }
 
     if ready.is_empty() {

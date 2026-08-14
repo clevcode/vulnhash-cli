@@ -1,5 +1,5 @@
-use std::io::Read;
 use crate::{output, store};
+use std::io::Read;
 
 pub fn run(reference: &str, text: Option<&str>, json: bool) -> Result<(), String> {
     let hash = store::resolve(reference)?;
@@ -7,7 +7,9 @@ pub fn run(reference: &str, text: Option<&str>, json: bool) -> Result<(), String
         Some(t) => t.to_string(),
         None => {
             let mut buf = String::new();
-            std::io::stdin().read_to_string(&mut buf).map_err(|e| format!("read stdin: {e}"))?;
+            std::io::stdin()
+                .read_to_string(&mut buf)
+                .map_err(|e| format!("read stdin: {e}"))?;
             buf
         }
     };

@@ -63,8 +63,8 @@ pub async fn http_request(
         .enable_http1()
         .build();
 
-    let client =
-        hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new()).build(https);
+    let client = hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+        .build(https);
 
     let mut req_builder = hyper::Request::builder()
         .method(method)
@@ -151,9 +151,15 @@ mod tests {
 
     #[tokio::test]
     async fn plaintext_to_a_remote_host_is_refused() {
-        let err = http_request("GET", "http://vulnhash.com/api/x", None, "application/json", Some("vh_token"))
-            .await
-            .unwrap_err();
+        let err = http_request(
+            "GET",
+            "http://vulnhash.com/api/x",
+            None,
+            "application/json",
+            Some("vh_token"),
+        )
+        .await
+        .unwrap_err();
         assert!(err.contains("refusing"), "unexpected error: {err}");
     }
 
@@ -162,6 +168,9 @@ mod tests {
         let err = http_request("GET", "ftp://example.com/x", None, "application/json", None)
             .await
             .unwrap_err();
-        assert!(err.contains("unsupported url scheme"), "unexpected error: {err}");
+        assert!(
+            err.contains("unsupported url scheme"),
+            "unexpected error: {err}"
+        );
     }
 }

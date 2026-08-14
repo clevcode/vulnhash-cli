@@ -14,8 +14,8 @@ pub fn run(json: bool) -> Result<(), String> {
     }
 
     println!(
-        "{:>4}  {:<64}  {:>8}  {:<9}  {:<6}  {}",
-        "ID", "HASH", "PARENT", "STATUS", "SYNCED", "DATE"
+        "{:>4}  {:<64}  {:>8}  {:<9}  {:<6}  DATE",
+        "ID", "HASH", "PARENT", "STATUS", "SYNCED"
     );
     println!("{}", "-".repeat(110));
     for e in &entries {

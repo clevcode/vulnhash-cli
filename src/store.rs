@@ -271,7 +271,7 @@ pub fn descendants(hash: &str) -> Result<Vec<Entry>, String> {
     while !frontier.is_empty() {
         let mut next = Vec::new();
         for e in &all {
-            if !frontier.iter().any(|p| *p == e.parent) || seen.contains(&e.hash) {
+            if !frontier.contains(&e.parent) || seen.contains(&e.hash) {
                 continue;
             }
             seen.push(e.hash.clone());
